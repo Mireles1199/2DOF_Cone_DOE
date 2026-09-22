@@ -822,7 +822,6 @@ class DoeSelectorUnifiedApp:
 
     _LEFT_WIDTH   = 420
     _CENTER_WIDTH = 860
-    _RIGHT_WIDTH  = 360
 
     def __init__(self, root: tk.Tk, h5_path: str) -> None:
         self.root     = root
@@ -882,7 +881,6 @@ class DoeSelectorUnifiedApp:
         self._build_layout()
         self._build_left_panel()
         self._build_center_panel()
-        # self._build_right_panel()
 
     def _build_topbar(self) -> None:
         bar = ttk.Frame(self.root, padding=(4, 2))
@@ -903,33 +901,43 @@ class DoeSelectorUnifiedApp:
         ttk.Checkbutton(
             bar, text="🎨 Color fijo por caso",
             variable=self._persistent_color_var,
+            command=self._replot_active_tab,
         ).pack(side=tk.LEFT, padx=4)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         ttk.Label(bar, text="α:", font=("Arial", 8)).pack(side=tk.LEFT)
         self._sig_alpha_var = tk.DoubleVar(value=0.5)
-        ttk.Scale(bar, from_=0.1, to=1.0, orient=tk.HORIZONTAL,
-                  variable=self._sig_alpha_var, length=80).pack(side=tk.LEFT)
+        _sc = ttk.Scale(bar, from_=0.1, to=1.0, orient=tk.HORIZONTAL,
+                         variable=self._sig_alpha_var, length=80)
+        _sc.pack(side=tk.LEFT)
+        _sc.bind("<ButtonRelease-1>", lambda _e: self._replot_active_tab())
         ttk.Label(bar, text="lw:", font=("Arial", 8)).pack(side=tk.LEFT, padx=(6, 0))
         self._sig_lw_var = tk.DoubleVar(value=0.9)
-        ttk.Scale(bar, from_=0.3, to=3.0, orient=tk.HORIZONTAL,
-                  variable=self._sig_lw_var, length=70).pack(side=tk.LEFT)
+        _sc = ttk.Scale(bar, from_=0.3, to=3.0, orient=tk.HORIZONTAL,
+                         variable=self._sig_lw_var, length=70)
+        _sc.pack(side=tk.LEFT)
+        _sc.bind("<ButtonRelease-1>", lambda _e: self._replot_active_tab())
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         ttk.Label(bar, text="ctrl α:", font=("Arial", 8)).pack(side=tk.LEFT)
         self._ctrl_alpha_var = tk.DoubleVar(value=1.0)
-        ttk.Scale(bar, from_=0.1, to=1.0, orient=tk.HORIZONTAL,
-                  variable=self._ctrl_alpha_var, length=70).pack(side=tk.LEFT)
+        _sc = ttk.Scale(bar, from_=0.1, to=1.0, orient=tk.HORIZONTAL,
+                         variable=self._ctrl_alpha_var, length=70)
+        _sc.pack(side=tk.LEFT)
+        _sc.bind("<ButtonRelease-1>", lambda _e: self._replot_active_tab())
         ttk.Label(bar, text="ctrl z:", font=("Arial", 8)).pack(side=tk.LEFT, padx=(6, 0))
         self._ctrl_zo_var = tk.IntVar(value=100)
-        ttk.Scale(bar, from_=1, to=200, orient=tk.HORIZONTAL,
-                  variable=self._ctrl_zo_var, length=70).pack(side=tk.LEFT)
+        _sc = ttk.Scale(bar, from_=1, to=200, orient=tk.HORIZONTAL,
+                         variable=self._ctrl_zo_var, length=70)
+        _sc.pack(side=tk.LEFT)
+        _sc.bind("<ButtonRelease-1>", lambda _e: self._replot_active_tab())
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         self._invert_order_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             bar, text="⇅ Invertir zorder",
             variable=self._invert_order_var,
+            command=self._replot_active_tab,
         ).pack(side=tk.LEFT, padx=4)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
@@ -976,6 +984,24 @@ class DoeSelectorUnifiedApp:
         _dp.LABEL_KEY = new_key
 
         self._populate_tree(self._filtered_cases())
+        self._replot_active_tab()
+
+    def _replot_active_tab(self) -> None:
+        """Redibuja el tab con la selección actual (tras cambiar la propiedad de color/leyenda)."""
+        if not self.tree.selection():
+            return
+        if hasattr(self, "_nb"):
+            current = self._nb.select()
+            if hasattr(self, "_sig_tab") and current == str(self._sig_tab):
+                self._plot_signals()
+            elif hasattr(self, "_force_tab") and current == str(self._force_tab):
+                self._plot_forces()
+            elif hasattr(self, "_It_tab") and current == str(self._It_tab):
+                self._plot_It()
+            elif hasattr(self, "_deflex_tab") and current == str(self._deflex_tab):
+                self._plot_deflex()
+        elif hasattr(self, "sig_canvas"):
+            self._plot_signals()
 
     def _build_layout(self) -> None:
         self.paned = tk.PanedWindow(
@@ -985,10 +1011,8 @@ class DoeSelectorUnifiedApp:
         self.paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
         self.left_frame   = ttk.Frame(self.paned)
         self.center_frame = ttk.Frame(self.paned)
-        self.right_frame  = ttk.Frame(self.paned)
         self.paned.add(self.left_frame,   minsize=240, width=self._LEFT_WIDTH)
         self.paned.add(self.center_frame, minsize=400, width=self._CENTER_WIDTH)
-        self.paned.add(self.right_frame,  minsize=200, width=self._RIGHT_WIDTH)
 
     # ── LEFT PANEL ────────────────────────────────────────────────────────────
     def _build_left_panel(self) -> None:
@@ -1216,10 +1240,13 @@ class DoeSelectorUnifiedApp:
         self._populate_tree(self._filtered_cases())
 
     def _populate_tree(self, cases_to_show: list) -> None:
+        prev_selected = {id(self._iid_to_case[i]) for i in self.tree.selection()
+                          if i in self._iid_to_case}
         for iid in self.tree.get_children():
             self.tree.delete(iid)
         self._iid_to_case.clear()
 
+        to_reselect = []
         for c in cases_to_show:
             row = []
             is_control = (c.get("group", "") == "control")
@@ -1257,6 +1284,11 @@ class DoeSelectorUnifiedApp:
                 self.tree.tag_configure("control_row", foreground="#cc0000", font=("Arial", 9, "bold"))
                 self.tree.item(iid, tags=("control_row",))
             self._iid_to_case[iid] = c
+            if id(c) in prev_selected:
+                to_reselect.append(iid)
+
+        if to_reselect:
+            self.tree.selection_set(to_reselect)
 
     def _sort_by(self, col: str) -> None:
         reverse          = (self._sort_col == col) and not self._sort_rev
@@ -1595,136 +1627,6 @@ class DoeSelectorUnifiedApp:
         self.ax_It.grid(False)
         self.ax_It.tick_params(labelsize=12)
         self.It_fig.suptitle("Selecciona casos y presiona  Plot I_t ▶")
-
-    # ── RIGHT PANEL ───────────────────────────────────────────────────────────
-    def _build_right_panel(self) -> None:
-        rf = self.right_frame
-        # All types use two stacked slots
-        self._build_doe_slots(rf)
-
-    def _build_doe_slots(self, parent: tk.Frame) -> None:
-        """Crea dos slots verticales para figuras (top + bot) — válido para todos los tipos."""
-        type_label = _TYPE_LABELS.get(self.h5_type, "Figura")
-        vpaned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=5, sashrelief=tk.RAISED)
-        vpaned.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
-        top_pane = ttk.Frame(vpaned)
-        bot_pane = ttk.Frame(vpaned)
-        vpaned.add(top_pane, stretch="always")
-        vpaned.add(bot_pane, stretch="always")
-
-        labels = self._summary_labels or []
-
-        def make_slot(parent, slot_name, default_idx):
-            zone = ttk.LabelFrame(parent, text=f"  {type_label} — {slot_name.upper()}  ", padding=4)
-            zone.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
-            hdr = ttk.Frame(zone)
-            hdr.pack(fill=tk.X, pady=(0, 3))
-            combo = ttk.Combobox(hdr, values=labels or ["(sin opciones)"],
-                                 state="readonly", font=("Arial", 9))
-            combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            if labels:
-                idx = min(default_idx, len(labels) - 1)
-                combo.current(idx)
-            ttk.Button(hdr, text="▶", width=3,
-                       command=lambda: self._refresh_doe_slot(slot_name)).pack(side=tk.LEFT, padx=(4, 0))
-            ttk.Button(hdr, text="💾", width=3,
-                       command=lambda: self._save_doe_slot(slot_name)).pack(side=tk.LEFT, padx=(2, 0))
-            canvas_frame = ttk.Frame(zone)
-            canvas_frame.pack(fill=tk.BOTH, expand=True)
-            ttk.Label(
-                canvas_frame,
-                text="Presiona ▶ para previsualizar",
-                foreground="#999999", font=("Arial", 9),
-                anchor=tk.CENTER, justify=tk.CENTER,
-            ).pack(expand=True)
-            toolbar_frame = ttk.Frame(zone)
-            toolbar_frame.pack(fill=tk.X)
-            return combo, canvas_frame, toolbar_frame
-
-        (self._doe_combo_top, self._doe_canvas_frame_top, self._doe_toolbar_frame_top) = make_slot(top_pane, "top", 0)
-        (self._doe_combo_bot, self._doe_canvas_frame_bot, self._doe_toolbar_frame_bot) = make_slot(bot_pane, "bot", 1)
-        self._doe_slot_map = {"top": self._doe_combo_top, "bot": self._doe_combo_bot}
-
-    def _refresh_doe_slot(self, slot: str) -> None:
-        combo = self._doe_slot_map.get(slot)
-        label = combo.get()
-        # reuse summary machinery by selecting in _summary_entries
-        entry = next((e for e in self._summary_entries if e[0] == label), None)
-        if entry is None:
-            messagebox.showwarning("Sin figura", f"No hay figura: {label}", parent=self.root)
-            return
-        lbl, func, extra = entry
-        fig = None
-        if isinstance(extra, tuple):
-            fig = _capture_new_figure(func, self.cases, *extra)
-        elif isinstance(extra, dict) and isinstance(func, str):
-            # Special string-key handlers for doe_noise_ind figures
-            kw = dict(extra)
-            h5_path = kw.pop("h5_path", self.h5_path)
-            try:
-                before = set(plt.get_fignums())
-                if func == "_noise_overlay":
-                    fig = _build_noise_overlay_fig(self.cases, kw["signal"])
-                elif func == "_noise_td_both":
-                    df_det = _noise_gather_df(h5_path)
-                    df_ind = df_det[df_det["indicator"] == kw["indicator"]].copy()
-                    _noise_plot_td_both(df_ind, kw["indicator"], None, False)
-                elif func == "_noise_td_ind":
-                    df_det = _noise_gather_df(h5_path)
-                    df_ind = df_det[df_det["indicator"] == kw["indicator"]].copy()
-                    _noise_plot_td_ind(df_ind, kw["indicator"], kw["td_col"], None, False)
-                elif func == "_noise_lollipop":
-                    df_det = _noise_gather_df(h5_path)
-                    _noise_plot_lollipop(df_det, None)
-                elif func == "_noise_delay":
-                    df_det = _noise_gather_df(h5_path)
-                    _noise_plot_delay(df_det, _IND_T_GT, None)
-                elif func == "_noise_far_cost":
-                    df_det = _noise_gather_df(h5_path)
-                    _noise_plot_far_cost(df_det, None)
-                elif func == "_noise_it_overlay":
-                    curves = _noise_gather_curves(h5_path)
-                    _noise_plot_it_overlay(curves, kw["indicator"], None, None, _IND_T_GT)
-                # grab whichever new figure appeared
-                if fig is None:
-                    after = set(plt.get_fignums())
-                    new_nums = sorted(after - before)
-                    if new_nums:
-                        fig = plt.figure(new_nums[-1])
-            except Exception as exc:
-                messagebox.showerror("Error al generar figura",
-                                     f"{type(exc).__name__}: {exc}", parent=self.root)
-                return
-        elif isinstance(extra, dict):
-            kw = dict(extra)
-            kw["out_dir"] = None
-            fig = _capture_new_figure(func, **kw)
-
-        if fig is None:
-            messagebox.showwarning("Sin figura", f"No se pudo generar: {label}", parent=self.root)
-            return
-
-        fig.set_size_inches(4.5, 4.5)
-        if slot == "top":
-            _embed_figure(fig, self._doe_canvas_frame_top, self._doe_toolbar_frame_top, self._fig_holder, "doe_top")
-        else:
-            _embed_figure(fig, self._doe_canvas_frame_bot, self._doe_toolbar_frame_bot, self._fig_holder, "doe_bot")
-
-    def _save_doe_slot(self, slot: str) -> None:
-        key = "doe_top" if slot == "top" else "doe_bot"
-        fig = self._fig_holder.get(key)
-        if fig is None:
-            messagebox.showinfo("Sin figura", "Primero presiona ▶ para previsualizar.", parent=self.root)
-            return
-        out_dir = os.path.join(os.path.dirname(self.h5_path), "figs_indicators")
-        os.makedirs(out_dir, exist_ok=True)
-        fname = _sanitize(slot + "_doe.png")
-        path = os.path.join(out_dir, fname)
-        try:
-            fig.savefig(path, dpi=300, bbox_inches="tight")
-            messagebox.showinfo("Guardado", f"Guardado: {path}", parent=self.root)
-        except Exception as exc:
-            messagebox.showerror("Error", str(exc), parent=self.root)
 
     # ── SIGNAL PLOT ───────────────────────────────────────────────────────────
     def _plot_signals(self) -> None:
