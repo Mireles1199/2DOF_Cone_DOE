@@ -813,7 +813,7 @@ def write_results(out_path: str, all_results: List[Dict[str, Any]],
     """Escribe los resultados en HDF5. Abre en modo 'a' para acumulación incremental.
 
     Si se proporciona *h5_doe_path*, copia también las señales crudas
-    (Axial_disp, Axial_vel) y los atributos de caso al grupo raíz del caso.
+    (Axial_disp, Axial_vel, Axial_acc) y los atributos de caso al grupo raíz del caso.
     """
     with h5py.File(out_path, "a") as out_f:
         for res in all_results:
@@ -833,7 +833,7 @@ def write_results(out_path: str, all_results: List[Dict[str, Any]],
                         if case_name in src_f:
                             for k, v in src_f[case_name].attrs.items():
                                 case_grp.attrs[k] = v
-                            for sig in ("Axial_disp", "Axial_vel"):
+                            for sig in ("Axial_disp", "Axial_vel", "Axial_acc"):
                                 if sig in src_f[case_name] and sig not in case_grp:
                                     sig_grp = case_grp.require_group(sig)
                                     sig_grp.create_dataset(

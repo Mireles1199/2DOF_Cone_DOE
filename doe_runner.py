@@ -329,7 +329,7 @@ POST_CLEANUP_DIRS = ['db', 'out', 'p', 's', 'tmp', 'tool', 'wp']
 #   Señales a extraer del sens_out.hdf5 de cada caso.
 #   Columna 0 = tiempo, columna 1 = valores.
 # ==============================================================================
-DOE_EXTRACT_SIGNALS = ["Axial_disp", "Axial_vel"]
+DOE_EXTRACT_SIGNALS = ["Axial_disp", "Axial_vel", "Axial_acc"]
 DOE_FORCE_SIGNAL = "res_R_p"
 
 
