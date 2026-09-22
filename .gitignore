@@ -1,0 +1,13 @@
+# Ignorar archivos de simulaciones y datos pesados
+*.hdf5
+*.h5
+**/db/
+**/out/
+**/p/
+**/tmp/
+**/tool/
+**/wp/
+*.zip
+**/xlsx/
+*.pkl
+*.csv
