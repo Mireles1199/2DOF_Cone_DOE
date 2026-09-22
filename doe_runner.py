@@ -846,6 +846,8 @@ FLUJO TÍPICO
                         help="Numero de workers para --timed (por defecto usa NB_PROC)")
     parser.add_argument("--timed", action="store_true",
                         help="Corre cada caso individualmente, mide tiempo (wall_time_s.txt por caso → attr HDF5 tras extract)")
+    parser.add_argument("--auto-extract", action="store_true",
+                        help="Corre --command extract automaticamente al terminar la corrida")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--args", nargs=argparse.REMAINDER, default=[])
     return parser.parse_args()
@@ -919,6 +921,9 @@ def main():
         run_doe_timed(lst_var, val_var, DOE_NAME, case_dir,
                       command_script, env, python_exe,
                       SCRIPT_DIR, nb_workers, args.dry_run)
+        if args.auto_extract:
+            extract_doe_results(doe_dir, os.path.basename(case_dir),
+                                DOE_EXTRACT_SIGNALS, dry_run=args.dry_run)
         return
 
     # 4b. Modo normal: sobreescribir param.py + un solo n2m_sch
@@ -944,6 +949,10 @@ def main():
         log.error("Comando termino con error: %d", rc)
         sys.exit(rc)
     log.info("Completado exitosamente.")
+
+    if args.auto_extract:
+        extract_doe_results(doe_dir, os.path.basename(case_dir),
+                            DOE_EXTRACT_SIGNALS, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
