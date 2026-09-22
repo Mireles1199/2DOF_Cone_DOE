@@ -182,6 +182,13 @@ _FORCE_NAMES = {"res_R_p"}
 _OUT_DEFLEX_GROUP = "Out_Deflex"
 _OUT_DEFLEX_NAMES = {"Axial_disp_out_deflex", "Axial_vel_out_deflex"}
 
+_LINE_TARGET_ALL = "Todas (tab activo)"
+_LINE_TARGETS = [_LINE_TARGET_ALL, "Señales: disp", "Señales: vel",
+                 "Fuerzas: F1", "Fuerzas: F2", "Fuerzas: F3",
+                 "Deflex: disp", "Deflex: vel", "I_t"]
+_LINE_COLORS = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
+                "#46f0f0", "#f032e6", "#9a6324", "#000075", "#808000"]
+
 
 def _read_signals(grp: h5py.Group) -> Dict[str, Any]:
     """Lee señales de tiempo de un grupo HDF5 → {name: (t, y)}."""
@@ -833,6 +840,7 @@ class DoeSelectorUnifiedApp:
         self._sort_rev: bool           = False
         self._iid_to_case: dict = {}
         self._manual_control_group: Optional[str] = None  # grupo elegido como control manual
+        self._ref_lines: List[dict] = []  # {"kind": "v"|"h", "value": float, "target": str, "color": str}
 
         self._load_file(h5_path)
         self._build_ui()
@@ -951,6 +959,26 @@ class DoeSelectorUnifiedApp:
         self._label_key_combo.bind("<<ComboboxSelected>>", self._on_label_key_change)
         self._refresh_label_key_combo()
 
+        bar2 = ttk.Frame(self.root, padding=(4, 2))
+        bar2.pack(side=tk.TOP, fill=tk.X)
+        ttk.Label(bar2, text="línea x=", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._vline_entry = ttk.Entry(bar2, width=8)
+        self._vline_entry.pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(bar2, text="y=", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._hline_entry = ttk.Entry(bar2, width=8)
+        self._hline_entry.pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(bar2, text="en:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._line_target_var = tk.StringVar(value=_LINE_TARGET_ALL)
+        ttk.Combobox(bar2, textvariable=self._line_target_var, values=_LINE_TARGETS,
+                     state="readonly", width=14).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(bar2, text="+ Línea", command=self._add_reference_lines).pack(side=tk.LEFT, padx=2)
+        self._line_remove_var = tk.StringVar()
+        self._line_remove_combo = ttk.Combobox(bar2, textvariable=self._line_remove_var,
+                                               state="readonly", width=20)
+        self._line_remove_combo.pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Button(bar2, text="Borrar sel.", command=self._remove_selected_line).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar2, text="Borrar todas", command=self._clear_reference_lines).pack(side=tk.LEFT, padx=2)
+
     def _refresh_label_key_combo(self) -> None:
         """Actualiza las opciones del combobox con las variables que tienen variación."""
         varying = _variable_keys_with_variation(self.cases)
@@ -986,22 +1014,131 @@ class DoeSelectorUnifiedApp:
         self._populate_tree(self._filtered_cases())
         self._replot_active_tab()
 
+    def _active_tab_info(self):
+        """(plot_fn, axes_dict, canvas) del tab actualmente activo, o (None, {}, None)."""
+        if hasattr(self, "_nb"):
+            current = self._nb.select()
+            if hasattr(self, "_sig_tab") and current == str(self._sig_tab):
+                return (self._plot_signals,
+                        {"Señales: disp": self.ax_disp, "Señales: vel": self.ax_vel},
+                        self.sig_canvas)
+            if hasattr(self, "_force_tab") and current == str(self._force_tab):
+                return (self._plot_forces,
+                        {"Fuerzas: F1": self.ax_force_1, "Fuerzas: F2": self.ax_force_2,
+                         "Fuerzas: F3": self.ax_force_3},
+                        self.force_canvas)
+            if hasattr(self, "_It_tab") and current == str(self._It_tab):
+                return self._plot_It, {"I_t": self.ax_It}, self.It_canvas
+            if hasattr(self, "_deflex_tab") and current == str(self._deflex_tab):
+                return (self._plot_deflex,
+                        {"Deflex: disp": self.ax_deflex_d, "Deflex: vel": self.ax_deflex_v},
+                        self.deflex_canvas)
+        elif hasattr(self, "sig_canvas"):
+            return (self._plot_signals,
+                    {"Señales: disp": self.ax_disp, "Señales: vel": self.ax_vel},
+                    self.sig_canvas)
+        return None, {}, None
+
     def _replot_active_tab(self) -> None:
         """Redibuja el tab con la selección actual (tras cambiar la propiedad de color/leyenda)."""
         if not self.tree.selection():
             return
-        if hasattr(self, "_nb"):
-            current = self._nb.select()
-            if hasattr(self, "_sig_tab") and current == str(self._sig_tab):
-                self._plot_signals()
-            elif hasattr(self, "_force_tab") and current == str(self._force_tab):
-                self._plot_forces()
-            elif hasattr(self, "_It_tab") and current == str(self._It_tab):
-                self._plot_It()
-            elif hasattr(self, "_deflex_tab") and current == str(self._deflex_tab):
-                self._plot_deflex()
-        elif hasattr(self, "sig_canvas"):
-            self._plot_signals()
+        fn, _, _ = self._active_tab_info()
+        if fn is not None:
+            fn()
+
+    def _replot_preserving_zoom(self) -> None:
+        """Redibuja el tab activo pero mantiene el zoom/pan que ya tenia (usado al agregar/borrar lineas)."""
+        _, axes, _ = self._active_tab_info()
+        saved = {key: (ax.get_xlim(), ax.get_ylim()) for key, ax in axes.items()}
+        self._replot_active_tab()
+        _, axes2, canvas2 = self._active_tab_info()
+        for key, ax in axes2.items():
+            if key in saved:
+                xlim, ylim = saved[key]
+                ax.set_xlim(xlim)
+                ax.set_ylim(ylim)
+        if canvas2 is not None:
+            canvas2.draw()
+
+    def _add_reference_lines(self) -> None:
+        """Agrega los valores de los campos x=/y= como lineas de referencia y redibuja."""
+        target = self._line_target_var.get() or _LINE_TARGET_ALL
+        new_entries = []
+        v_txt = self._vline_entry.get().strip()
+        if v_txt:
+            try:
+                color = _LINE_COLORS[len(self._ref_lines) % len(_LINE_COLORS)]
+                entry = {"kind": "v", "value": float(v_txt), "target": target, "color": color}
+                self._ref_lines.append(entry)
+                new_entries.append(entry)
+            except ValueError:
+                messagebox.showwarning("Valor inválido", f"'{v_txt}' no es un número.", parent=self.root)
+        h_txt = self._hline_entry.get().strip()
+        if h_txt:
+            try:
+                color = _LINE_COLORS[len(self._ref_lines) % len(_LINE_COLORS)]
+                entry = {"kind": "h", "value": float(h_txt), "target": target, "color": color}
+                self._ref_lines.append(entry)
+                new_entries.append(entry)
+            except ValueError:
+                messagebox.showwarning("Valor inválido", f"'{h_txt}' no es un número.", parent=self.root)
+        if new_entries:
+            self._vline_entry.delete(0, tk.END)
+            self._hline_entry.delete(0, tk.END)
+            self._refresh_line_remove_combo()
+            _, axes, _ = self._active_tab_info()
+            if all(self._line_in_view(e, axes) for e in new_entries):
+                self._replot_preserving_zoom()
+            else:
+                self._replot_active_tab()  # la linea nueva queda fuera del zoom actual -> autoescala
+
+    def _line_in_view(self, entry: dict, axes: dict) -> bool:
+        target_axes = list(axes.values()) if entry["target"] == _LINE_TARGET_ALL else (
+            [axes[entry["target"]]] if entry["target"] in axes else [])
+        for ax in target_axes:
+            lo, hi = ax.get_xlim() if entry["kind"] == "v" else ax.get_ylim()
+            if not (min(lo, hi) <= entry["value"] <= max(lo, hi)):
+                return False
+        return True
+
+    def _clear_reference_lines(self) -> None:
+        self._ref_lines.clear()
+        self._refresh_line_remove_combo()
+        self._replot_preserving_zoom()
+
+    def _refresh_line_remove_combo(self) -> None:
+        labels = [f"{i}: {'x' if e['kind']=='v' else 'y'}={e['value']:g}  [{e['target']}]"
+                  for i, e in enumerate(self._ref_lines)]
+        self._line_remove_combo["values"] = labels
+        self._line_remove_var.set(labels[-1] if labels else "")
+
+    def _remove_selected_line(self) -> None:
+        sel = self._line_remove_var.get()
+        if not sel:
+            return
+        idx = int(sel.split(":", 1)[0])
+        del self._ref_lines[idx]
+        self._refresh_line_remove_combo()
+        self._replot_preserving_zoom()
+
+    def _draw_reference_lines(self, axes: dict) -> None:
+        """axes: {nombre_target: Axes} de los ejes del plot que se esta dibujando ahora."""
+        for entry in self._ref_lines:
+            target = entry["target"]
+            targets = list(axes.values()) if target == _LINE_TARGET_ALL else (
+                [axes[target]] if target in axes else [])
+            for ax in targets:
+                if entry["kind"] == "v":
+                    ax.axvline(entry["value"], color=entry["color"], lw=1.2, linestyle="--", zorder=10)
+                    ax.text(entry["value"], 0.98, f"{entry['value']:g}", transform=ax.get_xaxis_transform(),
+                            va="top", ha="right", color=entry["color"], rotation=90,
+                            fontsize=14, zorder=11, clip_on=True)
+                else:
+                    ax.axhline(entry["value"], color=entry["color"], lw=1.2, linestyle="--", zorder=10)
+                    ax.text(0.02, entry["value"], f"{entry['value']:g}", transform=ax.get_yaxis_transform(),
+                            va="bottom", ha="left", color=entry["color"],
+                            fontsize=14, zorder=11, clip_on=True)
 
     def _build_layout(self) -> None:
         self.paned = tk.PanedWindow(
@@ -1755,6 +1892,7 @@ class DoeSelectorUnifiedApp:
             self._cbar.update_ticks()
 
         self.sig_fig.suptitle(f"{lk_disp}  —  {n} caso(s)")
+        self._draw_reference_lines({"Señales: disp": self.ax_disp, "Señales: vel": self.ax_vel})
         self.sig_canvas.draw()
 
         # Switch to Signals tab if Notebook exists
@@ -1854,6 +1992,8 @@ class DoeSelectorUnifiedApp:
             self._force_cbar.update_ticks()
 
         self.force_fig.suptitle(f"res_R_p — {len(selected)} caso(s)")
+        self._draw_reference_lines({"Fuerzas: F1": self.ax_force_1, "Fuerzas: F2": self.ax_force_2,
+                                    "Fuerzas: F3": self.ax_force_3})
         self.force_canvas.draw()
 
         if hasattr(self, "_nb"):
@@ -1965,6 +2105,7 @@ class DoeSelectorUnifiedApp:
             self._deflex_cbar.update_ticks()
 
         self.deflex_fig.suptitle(f"Out Deflex  —  {lk_disp}  —  {n} caso(s)")
+        self._draw_reference_lines({"Deflex: disp": self.ax_deflex_d, "Deflex: vel": self.ax_deflex_v})
         self.deflex_canvas.draw()
 
         if hasattr(self, "_nb"):
@@ -2114,6 +2255,7 @@ class DoeSelectorUnifiedApp:
         if n <= 10 and plotted:
             self.ax_It.legend(fontsize=14, loc="upper left")
 
+        self._draw_reference_lines({"I_t": self.ax_It})
         self.It_fig.tight_layout()
         self.It_canvas.draw()
 
@@ -2234,15 +2376,12 @@ def main() -> None:
 
     h5_path = args.h5
     if not h5_path:
-        # Open file dialog (needs Tk root first)
-        _tmp = tk.Tk()
-        _tmp.withdraw()
+        # Sin parent explicito: tkinter crea y maneja su propio root implicito,
+        # mas confiable en Windows que un root manual withdraw()-eado.
         h5_path = filedialog.askopenfilename(
-            parent=_tmp,
             title="Selecciona un archivo HDF5 DOE",
             filetypes=[("HDF5 files", "*.h5 *.hdf5"), ("All files", "*.*")],
         )
-        _tmp.destroy()
         if not h5_path:
             print("[INFO] No se seleccionó ningún archivo. Saliendo.")
             return
@@ -2256,6 +2395,7 @@ def main() -> None:
     print(f"[INFO] Formato detectado: {_TYPE_LABELS.get(h5_type, h5_type)}")
 
     root = tk.Tk()
+    root.update()  # pinta la ventana ya, antes de la carga pesada del .h5
     DoeSelectorUnifiedApp(root, h5_path)
     root.mainloop()
 

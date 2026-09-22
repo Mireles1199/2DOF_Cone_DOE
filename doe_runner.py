@@ -72,23 +72,23 @@ log = logging.getLogger(__name__)
 # ))
 
 # Step 3 - Senitivity dt
-SCRIPT_DIR = os.path.abspath(os.path.join(
-    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-    "Chatter-Criteria",
-    "CAMP10_Chatter_detection_Methodes",
-    "Convergency_Simulation",
-    "3_Sensitivity_dt",
-))
-
-
-# Training - Tube
 # SCRIPT_DIR = os.path.abspath(os.path.join(
 #     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
 #     "Chatter-Criteria",
 #     "CAMP10_Chatter_detection_Methodes",
 #     "Convergency_Simulation",
-#     "4_DOE_Data_Training_Tube",
+#     "3_Sensitivity_dt",
 # ))
+
+
+# Training - Tube
+SCRIPT_DIR = os.path.abspath(os.path.join(
+    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+    "Chatter-Criteria",
+    "CAMP10_Chatter_detection_Methodes",
+    "Convergency_Simulation",
+    "4_DOE_Data_Training_Tube",
+))
 
 
 
@@ -202,7 +202,7 @@ DEFAULT_N2M_BAT = os.path.join(
 
 
 # ============== Training Tube ============
-DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.5-2.0"
+DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.91-1.09"
 
 
 
@@ -256,22 +256,45 @@ DOE_FACTORIAL = {
 #   Todas las listas deben tener el mismo numero de elementos.
 # ------------------------------------------------------------------------------
 Ap_tube = [
-        4.30E-03, #0.5
-        5.16E-03, #0.6
-        6.02E-03, #0.7
-        6.88E-03, #0.8
-        7.74E-03, #0.9
-        8.61E-03, #1.0
-        9.47E-03, #1.1
-        1.03E-02, #1.2
-        1.12E-02, #1.3
-        1.20E-02, #1.4
-        1.29E-02, #1.5
-        1.38E-02, #1.6
-        1.46E-02, #1.7
-        1.55E-02, #1.8
-        1.63E-02, #1.9
-        1.72E-02  #2.0
+        # 4.30E-03, #0.5
+        # 5.16E-03, #0.6
+        # 6.02E-03, #0.7
+        # 6.88E-03, #0.8
+        # 7.74E-03, #0.9
+        # 8.61E-03, #1.0
+        # 9.47E-03, #1.1
+        # 1.03E-02, #1.2
+        # 1.12E-02, #1.3
+        # 1.20E-02, #1.4
+        # 1.29E-02, #1.5
+        # 1.38E-02, #1.6
+        # 1.46E-02, #1.7
+        # 1.55E-02, #1.8
+        # 1.63E-02, #1.9
+        # 1.72E-02  #2.0
+
+        7.83E-03, #0.91
+        7.92E-03, #0.92
+        8.00E-03, #0.93
+        8.09E-03, #0.94
+        8.17E-03, #0.95
+        8.26E-03, #0.96
+        8.35E-03, #0.97
+        8.43E-03, #0.98
+        8.52E-03, #0.99
+
+        8.69E-03, #1.01
+        8.78E-03, #1.02
+        8.86E-03, #1.03
+        8.95E-03, #1.04
+        9.04E-03, #1.05
+        9.12E-03, #1.06
+        9.21E-03, #1.07
+        9.29E-03, #1.08
+        9.38E-03 #1.09
+
+
+
 ]
 # Ap_tube = [ 8.48E-03 ]  # 0.985
 spin_rate_sweep = 12098.28
@@ -785,10 +808,14 @@ EJEMPLOS
       Simula sin ejecutar (muestra rutas y comandos).
 
   python doe_runner.py --case 1DOF_150Hz --command extract
-      Extrae señales de todos los casos → guarda doe_results.h5.
+      Extrae señales de todos los casos -> guarda doe_results.h5.
 
   python doe_runner.py --case 1DOF_150Hz --command extract --doe_name DOE_Influence_dt
       Extrae de la carpeta DOE_Influence_dt/ (sobreescribe DOE_NAME del script).
+
+  python doe_runner.py --case 1DOF_150Hz --timed --auto-extract
+      Corre el DOE completo (modo timed) y al terminar corre --command extract
+      solo, sin tener que lanzarlo aparte despues.
 
   python doe_runner.py --command merge --doe_name DOE_base --merge_from DOE_patch
       Fusiona DOE_patch/doe_results.h5 en DOE_base/doe_results.h5.
@@ -845,7 +872,7 @@ FLUJO TÍPICO
     parser.add_argument("--workers", type=int, default=None,
                         help="Numero de workers para --timed (por defecto usa NB_PROC)")
     parser.add_argument("--timed", action="store_true",
-                        help="Corre cada caso individualmente, mide tiempo (wall_time_s.txt por caso → attr HDF5 tras extract)")
+                        help="Corre cada caso individualmente, mide tiempo (wall_time_s.txt por caso -> attr HDF5 tras extract)")
     parser.add_argument("--auto-extract", action="store_true",
                         help="Corre --command extract automaticamente al terminar la corrida")
     parser.add_argument("--dry-run", action="store_true")
