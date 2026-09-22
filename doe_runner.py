@@ -54,13 +54,13 @@ log = logging.getLogger(__name__)
 # ))
 
 # Step 1 - Detection Limite Lobes
-SCRIPT_DIR = os.path.abspath(os.path.join(
-    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-    "Chatter-Criteria",
-    "CAMP10_Chatter_detection_Methodes",
-    "Convergency_Simulation",
-    "1_Detection_Limite_Lobes",
-))
+# SCRIPT_DIR = os.path.abspath(os.path.join(
+#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+#     "Chatter-Criteria",
+#     "CAMP10_Chatter_detection_Methodes",
+#     "Convergency_Simulation",
+#     "1_Detection_Limite_Lobes",
+# ))
 
 # Step 2 - Senitivity Dexels
 # SCRIPT_DIR = os.path.abspath(os.path.join(
@@ -72,13 +72,13 @@ SCRIPT_DIR = os.path.abspath(os.path.join(
 # ))
 
 # Step 3 - Senitivity dt
-# SCRIPT_DIR = os.path.abspath(os.path.join(
-#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-#     "Chatter-Criteria",
-#     "CAMP10_Chatter_detection_Methodes",
-#     "Convergency_Simulation",
-#     "3_Sensitivity_dt",
-# ))
+SCRIPT_DIR = os.path.abspath(os.path.join(
+    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+    "Chatter-Criteria",
+    "CAMP10_Chatter_detection_Methodes",
+    "Convergency_Simulation",
+    "3_Sensitivity_dt",
+))
 
 
 # Training - Tube
@@ -144,7 +144,7 @@ DEFAULT_N2M_BAT = os.path.join(
 
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_10_patch_0.95"
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_5"
-DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_1_patch_0.985"
+# DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_1_patch_0.985"
 
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_80e-5_RUN_10_patch_0.95"
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_80e-5_RUN_5"
@@ -202,7 +202,7 @@ DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_1_patch_0.985"
 
 
 # ============== Training Tube ============
-# DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.5-2.0"
+DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.5-2.0"
 
 
 
@@ -210,7 +210,7 @@ DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_1_patch_0.985"
 
 
 
-NB_PROC  = 1     # numero de procesos paralelos
+NB_PROC  = 4     # numero de procesos paralelos
 
 # ------------------------------------------------------------------------------
 # MODO 1 - FACTORIAL COMPLETO (producto cartesiano)
@@ -255,28 +255,28 @@ DOE_FACTORIAL = {
 # MODO 2 - BARRIDO PAREADO (zip, posicion a posicion)
 #   Todas las listas deben tener el mismo numero de elementos.
 # ------------------------------------------------------------------------------
-# Ap_tube = [
-#         4.30E-03, #0.5
-#         5.16E-03, #0.6
-#         6.02E-03, #0.7
-#         6.88E-03, #0.8
-#         7.74E-03, #0.9
-#         8.61E-03, #1.0
-#         9.47E-03, #1.1
-#         1.03E-02, #1.2
-#         1.12E-02, #1.3
-#         1.20E-02, #1.4
-#         1.29E-02, #1.5
-#         1.38E-02, #1.6
-#         1.46E-02, #1.7
-#         1.55E-02, #1.8
-#         1.63E-02, #1.9
-#         1.72E-02  #2.0
-# ]
-Ap_tube = [ 8.48E-03 ]  # 0.985
+Ap_tube = [
+        4.30E-03, #0.5
+        5.16E-03, #0.6
+        6.02E-03, #0.7
+        6.88E-03, #0.8
+        7.74E-03, #0.9
+        8.61E-03, #1.0
+        9.47E-03, #1.1
+        1.03E-02, #1.2
+        1.12E-02, #1.3
+        1.20E-02, #1.4
+        1.29E-02, #1.5
+        1.38E-02, #1.6
+        1.46E-02, #1.7
+        1.55E-02, #1.8
+        1.63E-02, #1.9
+        1.72E-02  #2.0
+]
+# Ap_tube = [ 8.48E-03 ]  # 0.985
 spin_rate_sweep = 12098.28
 f_tooth_sweep = 0.05
-dxl_size_sweep = 40e-5
+dxl_size_sweep = 20e-5
 nb_dt_rev_sweep = 200
 
 DOE_SWEEP = {
