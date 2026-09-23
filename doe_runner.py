@@ -822,6 +822,10 @@ EJEMPLOS
       Los casos nuevos se renumeran continuando desde el último índice del base.
       Los casos con attrs idénticos se omiten automáticamente (no se duplican).
 
+  python doe_runner.py --command merge --doe_name DOE_base --merge_from DOE_patch --merge_out DOE_merged
+      Igual que el anterior, pero copia DOE_base -> DOE_merged primero y fusiona
+      ahi. DOE_base y DOE_patch quedan intactos.
+
   python doe_runner.py --case 1DOF_150Hz --timed
       Corre cada caso en directorio aislado, NB_PROC casos en paralelo (runner-side).
       Guarda el tiempo por caso en cada carpeta de caso (wall_time_s.txt).
@@ -869,6 +873,9 @@ FLUJO TÍPICO
                         help="DOE base (extract/merge). Sobreescribe DOE_NAME del config")
     parser.add_argument("--merge_from", default=None,
                         help="(merge) Nombre del DOE patch cuyos casos se añaden al base")
+    parser.add_argument("--merge_out", default=None,
+                        help="(merge) Si se da, copia --doe_name a esta carpeta nueva y fusiona ahi "
+                             "en vez de modificar el DOE base original")
     parser.add_argument("--workers", type=int, default=None,
                         help="Numero de workers para --timed (por defecto usa NB_PROC)")
     parser.add_argument("--timed", action="store_true",
@@ -908,8 +915,23 @@ def main():
             sys.exit(1)
         base_dir  = os.path.join(os.path.dirname(case_dir), doe_name_eff)
         patch_dir = os.path.join(os.path.dirname(case_dir), args.merge_from)
-        log.info("Merge: %s  <--  %s", base_dir, patch_dir)
-        merge_doe_results(base_dir, patch_dir, dry_run=args.dry_run)
+
+        merge_target = base_dir
+        if args.merge_out:
+            out_dir = os.path.join(os.path.dirname(case_dir), args.merge_out)
+            if args.dry_run:
+                log.info("[DRY-RUN] Copiaria %s -> %s (el resto del preview se muestra sobre el original)",
+                         base_dir, out_dir)
+            else:
+                if os.path.isdir(out_dir):
+                    log.error("La carpeta destino ya existe: %s", out_dir)
+                    sys.exit(1)
+                shutil.copytree(base_dir, out_dir)
+                log.info("Copiado %s -> %s", base_dir, out_dir)
+                merge_target = out_dir
+
+        log.info("Merge: %s  <--  %s", merge_target, patch_dir)
+        merge_doe_results(merge_target, patch_dir, dry_run=args.dry_run)
         return
 
     # 2. Generar casos DOE
