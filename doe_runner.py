@@ -23,6 +23,7 @@ import itertools
 import subprocess
 import argparse
 import logging
+import math
 import re
 import shutil
 import glob
@@ -54,13 +55,13 @@ log = logging.getLogger(__name__)
 # ))
 
 # Step 1 - Detection Limite Lobes
-# SCRIPT_DIR = os.path.abspath(os.path.join(
-#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-#     "Chatter-Criteria",
-#     "CAMP10_Chatter_detection_Methodes",
-#     "Convergency_Simulation",
-#     "1_Detection_Limite_Lobes",
-# ))
+SCRIPT_DIR = os.path.abspath(os.path.join(
+    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+    "Chatter-Criteria",
+    "CAMP10_Chatter_detection_Methodes",
+    "Convergency_Simulation",
+    "1_Detection_Limite_Lobes",
+))
 
 # Step 2 - Senitivity Dexels
 # SCRIPT_DIR = os.path.abspath(os.path.join(
@@ -82,13 +83,13 @@ log = logging.getLogger(__name__)
 
 
 # Training - Tube
-SCRIPT_DIR = os.path.abspath(os.path.join(
-    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-    "Chatter-Criteria",
-    "CAMP10_Chatter_detection_Methodes",
-    "Convergency_Simulation",
-    "4_DOE_Data_Training_Tube",
-))
+# SCRIPT_DIR = os.path.abspath(os.path.join(
+#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+#     "Chatter-Criteria",
+#     "CAMP10_Chatter_detection_Methodes",
+#     "Convergency_Simulation",
+#     "4_DOE_Data_Training_Tube",
+# ))
 
 
 
@@ -139,7 +140,7 @@ DEFAULT_N2M_BAT = os.path.join(
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_10_patch_0.95"
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_5"
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1"
-# DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1_patch_0.985"
+DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1_patch_0.985"
 
 
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_10_patch_0.95"
@@ -210,7 +211,7 @@ DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.91-1.09"
 
 
 
-NB_PROC  = 4     # numero de procesos paralelos
+NB_PROC  = 1     # numero de procesos paralelos
 
 # ------------------------------------------------------------------------------
 # MODO 1 - FACTORIAL COMPLETO (producto cartesiano)
@@ -255,51 +256,30 @@ DOE_FACTORIAL = {
 # MODO 2 - BARRIDO PAREADO (zip, posicion a posicion)
 #   Todas las listas deben tener el mismo numero de elementos.
 # ------------------------------------------------------------------------------
-Ap_tube = [
-        # 4.30E-03, #0.5
-        # 5.16E-03, #0.6
-        # 6.02E-03, #0.7
-        # 6.88E-03, #0.8
-        # 7.74E-03, #0.9
-        # 8.61E-03, #1.0
-        # 9.47E-03, #1.1
-        # 1.03E-02, #1.2
-        # 1.12E-02, #1.3
-        # 1.20E-02, #1.4
-        # 1.29E-02, #1.5
-        # 1.38E-02, #1.6
-        # 1.46E-02, #1.7
-        # 1.55E-02, #1.8
-        # 1.63E-02, #1.9
-        # 1.72E-02  #2.0
-
-        7.83E-03, #0.91
-        7.92E-03, #0.92
-        8.00E-03, #0.93
-        8.09E-03, #0.94
-        8.17E-03, #0.95
-        8.26E-03, #0.96
-        8.35E-03, #0.97
-        8.43E-03, #0.98
-        8.52E-03, #0.99
-
-        8.69E-03, #1.01
-        8.78E-03, #1.02
-        8.86E-03, #1.03
-        8.95E-03, #1.04
-        9.04E-03, #1.05
-        9.12E-03, #1.06
-        9.21E-03, #1.07
-        9.29E-03, #1.08
-        9.38E-03 #1.09
+# Ap_tube = [
+#         # 4.30E-03, #0.5
+#         # 5.16E-03, #0.6
+#         # 6.02E-03, #0.7
+#         # 6.88E-03, #0.8
+#         # 7.74E-03, #0.9
+#         # 8.61E-03, #1.0
+#         # 9.47E-03, #1.1
+#         # 1.03E-02, #1.2
+#         # 1.12E-02, #1.3
+#         # 1.20E-02, #1.4
+#         # 1.29E-02, #1.5
+#         # 1.38E-02, #1.6
+#         # 1.46E-02, #1.7
+#         # 1.55E-02, #1.8
+#         # 1.63E-02, #1.9
+#         # 1.72E-02  #2.0
 
 
-
-]
-# Ap_tube = [ 8.48E-03 ]  # 0.985
+# ]
+Ap_tube = [ 8.48E-03 ]  # 0.985
 spin_rate_sweep = 12098.28
 f_tooth_sweep = 0.05
-dxl_size_sweep = 20e-5
+dxl_size_sweep = 1.25e-5
 nb_dt_rev_sweep = 200
 
 DOE_SWEEP = {
@@ -349,6 +329,11 @@ POST_CLEANUP_DIRS = ['db', 'out', 'p', 's', 'tmp', 'tool', 'wp']
 # ==============================================================================
 DOE_EXTRACT_SIGNALS = ["Axial_disp", "Axial_vel", "Axial_acc"]
 DOE_FORCE_SIGNAL = "res_R_p"
+
+# kappa = Ap / AP_REF (adimensional). None = no calcular.
+# Ap_start == Ap_end (profundidad fija)  -> attr 'kappa'
+# Ap_start != Ap_end (barrido en el caso) -> attrs 'kappa_start' / 'kappa_end'
+AP_REF = 8.605e-3
 
 
 def build_doe_cases(mode: str) -> tuple[list, list]:
@@ -557,6 +542,18 @@ def extract_doe_results(doe_dir: str, case_name: str, signals: list, dry_run: bo
                     grp.attrs[k] = v
                 except Exception:
                     grp.attrs[k] = str(v)
+
+            # -- kappa = Ap / AP_REF --
+            if AP_REF:
+                ap_start = var_val.get("$Ap_start$")
+                ap_end   = var_val.get("$Ap_end$")
+                if ap_start is not None and ap_end is not None:
+                    if ap_start == ap_end:
+                        grp.attrs["kappa"] = math.trunc(ap_start / AP_REF * 1000) / 1000
+                    else:
+                        grp.attrs["kappa_start"] = math.trunc(ap_start / AP_REF * 1000) / 1000
+                        grp.attrs["kappa_end"]   = math.trunc(ap_end / AP_REF * 1000) / 1000
+
             # -- wall_time_s (guardado por --timed dentro de la carpeta del caso) --
             wt_file = os.path.join(os.path.dirname(case_path), "wall_time_s.txt")
             if os.path.isfile(wt_file):

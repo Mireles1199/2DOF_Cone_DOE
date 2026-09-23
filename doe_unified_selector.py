@@ -27,7 +27,7 @@ import re
 import sys
 from typing import Any, Dict, List, Optional
 
-# ── Backend BEFORE any pyplot import ──────────────────────────────────────────
+# ── Backend ANTES de cualquier import de pyplot ──────────────────────────────────────────
 import matplotlib
 matplotlib.use("TkAgg")
 
@@ -43,7 +43,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-# ── Import from existing plotters ─────────────────────────────────────────────
+# ── Import de plotters existentes ─────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
@@ -80,7 +80,7 @@ from doe_model_snr_plotter import (
     _detect_param_key as _snr_detect_param_key,
 )
 
-# doe_noise_plotter functions (for TYPE_NOISE_IND right panel)
+# funciones de doe_noise_plotter (para el panel de resumen de TYPE_NOISE_IND)
 from doe_noise_plotter import (
     gather_detection_rows        as _noise_gather_df,
     plot_td_for_indicator        as _noise_plot_td_ind,
@@ -94,7 +94,7 @@ from doe_noise_plotter import (
 
 _cfg_estilo()
 
-# ── Format type constants ──────────────────────────────────────────────────────
+# ── Constantes de tipo de formato ──────────────────────────────────────────────────────
 TYPE_DOE_RESULTS   = "doe_results"
 TYPE_DOE_NOISE     = "doe_noise"
 TYPE_DOE_INDICATOR = "doe_indicator"
@@ -102,8 +102,8 @@ TYPE_NOISE_IND     = "doe_noise_ind"
 TYPE_MODEL_SNR     = "doe_model_snr"
 
 _TYPE_LABELS = {
-    TYPE_DOE_RESULTS  : "DOE Results  (señales)",
-    TYPE_DOE_NOISE    : "DOE Noise  (señales + SNR)",
+    TYPE_DOE_RESULTS  : "DOE Results  (signals)",
+    TYPE_DOE_NOISE    : "DOE Noise  (signals + SNR)",
     TYPE_DOE_INDICATOR: "DOE Indicator Results",
     TYPE_NOISE_IND    : "DOE Noise Indicators",
     TYPE_MODEL_SNR    : "DOE Model SNR",
@@ -113,7 +113,7 @@ DECIMATE = 1   # decimación para plots de señales en panel central
 
 
 # ==============================================================================
-# FORMAT DETECTION
+# DETECCION DE FORMATO
 # ==============================================================================
 
 def detect_h5_type(h5_path: str) -> str:
@@ -162,9 +162,9 @@ def detect_h5_type(h5_path: str) -> str:
 
 
 # ==============================================================================
-# NORMALIZED LOADERS
+# LOADERS NORMALIZADOS
 # ==============================================================================
-# Estructura normalizada de cada case dict:
+# Estructura normalizada de cada dict de caso:
 #   group     : str        — nombre del grupo HDF5
 #   label_key : str        — clave DOE principal (eje X tabla)
 #   label_val : float      — valor numérico del eje X
@@ -281,7 +281,7 @@ def _best_label_key(cases: List[Dict]) -> str:
         if spread == 0.0:
             continue
         mean_abs = abs(np.mean(valid))
-        # Relative spread (CV); fall back to absolute when mean ≈ 0
+        # Dispersión relativa (CV); usa absoluta si la media ≈ 0
         score = spread / mean_abs if mean_abs > 1e-12 else spread
         if score > best_score:
             best_score, best_key = score, k
@@ -314,7 +314,7 @@ def load_doe_results(h5_path: str) -> List[Dict]:
                 "snr":         {},
                 "dt_us":       None,
                 "wall_time_s": wall_t,
-                # Also copy signals as top-level keys for plot_convergence compat
+                # Tambien copia las señales como claves de primer nivel (compat con plot_convergence)
                 "Axial_disp":  None,
                 "Axial_vel":   None,
             })
@@ -378,7 +378,7 @@ def load_doe_indicator_unified(h5_path: str) -> List[Dict]:
         # top-level compat
         c["Axial_disp"] = c["signals"].get("Axial_disp")
         c["Axial_vel"]  = c["signals"].get("Axial_vel")
-    # Re-read signals from HDF5 (load_indicator_results doesn't read them)
+    # Vuelve a leer las señales del HDF5 (load_indicator_results no las lee)
     with h5py.File(h5_path, "r") as f:
         for c in raw:
             grp = f.get(c["group"])
@@ -494,7 +494,7 @@ def _assign_case_colors(cases: List[Dict], qualitative: bool = False) -> None:
         norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
     else:
         norm = mcolors.Normalize(vmin=0, vmax=max(len(non_ctrl) - 1, 1))
-        # assign by index when all values are the same
+        # asigna por índice cuando todos los valores son iguales
         for i, c in enumerate(non_ctrl):
             rgba = cmap(norm(i))
             c["_color"]     = rgba
@@ -516,7 +516,7 @@ def _assign_case_colors(cases: List[Dict], qualitative: bool = False) -> None:
 
 
 # ==============================================================================
-# HELPERS
+# AUXILIARES
 # ==============================================================================
 
 def _fmt_val(v) -> str:
@@ -599,7 +599,7 @@ def _embed_figure(fig: Figure, canvas_frame: tk.Frame,
 
 
 # ==============================================================================
-# COLUMN SELECTION DIALOG (reused from doe_selector.py)
+# DIALOGO DE SELECCION DE COLUMNAS (reusado de doe_selector.py)
 # ==============================================================================
 
 class ColumnsDialog(tk.Toplevel):
@@ -611,21 +611,21 @@ class ColumnsDialog(tk.Toplevel):
         self._result = None
         self._vars: dict = {}
 
-        ttk.Label(self, text="Columnas visibles en la tabla:",
+        ttk.Label(self, text="Visible columns in the table:",
                   font=("Arial", 10, "bold")).pack(padx=14, pady=(10, 4), anchor=tk.W)
 
         # Botones rápidos
         quick = ttk.Frame(self)
         quick.pack(fill=tk.X, padx=14, pady=(0, 4))
-        ttk.Button(quick, text="☑ Todas",
+        ttk.Button(quick, text="☑ All",
                    command=lambda: [v.set(True)  for v in self._vars.values()]).pack(side=tk.LEFT, padx=2)
-        ttk.Button(quick, text="☐ Ninguna",
+        ttk.Button(quick, text="☐ None",
                    command=lambda: [v.set(False) for v in self._vars.values()]).pack(side=tk.LEFT, padx=2)
 
         frm = ttk.Frame(self)
         frm.pack(fill=tk.BOTH, padx=14, pady=4)
 
-        ttk.Label(frm, text="case  (fijo)", foreground="#888888").pack(anchor=tk.W, pady=1)
+        ttk.Label(frm, text="case  (fixed)", foreground="#888888").pack(anchor=tk.W, pady=1)
 
         for key in all_keys:
             var = tk.BooleanVar(value=(key in visible_keys))
@@ -635,8 +635,8 @@ class ColumnsDialog(tk.Toplevel):
 
         btns = ttk.Frame(self)
         btns.pack(fill=tk.X, padx=14, pady=(6, 10))
-        ttk.Button(btns, text="Cancelar", command=self.destroy).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(btns, text="Aplicar", command=self._apply).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(btns, text="Cancel", command=self.destroy).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(btns, text="Apply", command=self._apply).pack(side=tk.RIGHT, padx=4)
 
         self.update_idletasks()
         px = parent.winfo_rootx() + parent.winfo_width()  // 2 - self.winfo_width()  // 2
@@ -653,14 +653,14 @@ class ColumnsDialog(tk.Toplevel):
 
 
 # ==============================================================================
-# SUMMARY PLOT ENTRIES PER TYPE
+# ENTRADAS DE FIGURAS DE RESUMEN POR TIPO
 # ==============================================================================
 
 # Each entry: (label, callable_or_str, kwargs_template)
-# callable_or_str: either a function reference or a special string key
+# callable_or_str: una referencia a función o una clave string especial
 
 def _make_summary_entries(h5_type: str, cases: list, h5_path: str):
-    """Returns list of (label, func, extra_args_dict) for the right panel combobox."""
+    """Devuelve la lista de (label, func, extra_args_dict) para el combobox de resumen."""
     entries = []
 
     if h5_type == TYPE_DOE_RESULTS:
@@ -762,11 +762,11 @@ def _build_noise_overlay_fig(cases: list, signal: str) -> Optional[Figure]:
         lv = c.get("label_val")
         is_control = (c.get("group", "") == "control")
         if is_control or not np.isfinite(lv):
-            # control: draw with distinctive style and include in legend
+            # control: dibuja con estilo distintivo y lo incluye en la leyenda
             color = "red"
             ax.plot(t[::DECIMATE], y[::DECIMATE], color=color, lw=2.2, alpha=1.0,
                     label="control", zorder=6, rasterized=True)
-            # Also mark control in the plot (small annotation)
+            # Tambien marca el control en el plot (anotacion chica)
             try:
                 mid = int(len(t) // 2)
                 ax.scatter([t[mid]], [y[mid]], marker="D", color=color, s=30, zorder=7)
@@ -821,7 +821,7 @@ def _it_plot_yscale(runs_to_show: List[str]) -> str:
 
 
 # ==============================================================================
-# MAIN APPLICATION
+# APLICACION PRINCIPAL
 # ==============================================================================
 
 class DoeSelectorUnifiedApp:
@@ -841,11 +841,12 @@ class DoeSelectorUnifiedApp:
         self._iid_to_case: dict = {}
         self._manual_control_group: Optional[str] = None  # grupo elegido como control manual
         self._ref_lines: List[dict] = []  # {"kind": "v"|"h", "value": float, "target": str, "color": str}
+        self._plotted_iids: set = set()  # ultima seleccion realmente graficada (para "+ Agregar al plot")
 
         self._load_file(h5_path)
         self._build_ui()
 
-    # ── File loading ──────────────────────────────────────────────────────────
+    # ── Carga de archivo ──────────────────────────────────────────────────────────
     def _load_file(self, h5_path: str) -> None:
         self.h5_path  = h5_path
         self.h5_type  = detect_h5_type(h5_path)
@@ -853,7 +854,7 @@ class DoeSelectorUnifiedApp:
         self.doe_name = os.path.basename(os.path.dirname(h5_path))
         self._all_keys     = _all_var_keys(self.cases)
         self._visible_keys = list(self._all_keys)
-        # Run-names available (for indicator types)
+        # Nombres de run disponibles (para tipos indicador)
         self._all_runs = sorted({rn for c in self.cases for rn in c.get("runs", {})})
 
         # Sincronizar doe_plotter.LABEL_KEY con la variable real del DOE cargado.
@@ -862,17 +863,17 @@ class DoeSelectorUnifiedApp:
         if self.cases:
             _dp.LABEL_KEY = self.cases[0].get("label_key", _dp.LABEL_KEY)
 
-        # Summary entries for right panel
+        # Entradas de resumen (figuras precalculadas por tipo)
         self._summary_entries = _make_summary_entries(self.h5_type, self.cases, h5_path)
         self._summary_labels  = [e[0] for e in self._summary_entries]
         # Filter variables
         self._filter_var_str: Optional[tk.StringVar] = None
 
-        # Refresh label-key combobox if UI already built
+        # Refresca el combobox de label-key si la UI ya esta construida
         if hasattr(self, "_label_key_combo"):
             self._refresh_label_key_combo()
 
-    # ── UI build ──────────────────────────────────────────────────────────────
+    # ── Construcción de UI ──────────────────────────────────────────────────────────────
     def _build_ui(self) -> None:
         self.root.title(
             f"{_TYPE_LABELS.get(self.h5_type, self.h5_type)}  —  "
@@ -894,12 +895,12 @@ class DoeSelectorUnifiedApp:
         bar = ttk.Frame(self.root, padding=(4, 2))
         bar.pack(side=tk.TOP, fill=tk.X)
 
-        ttk.Button(bar, text="📂  Abrir otro .h5",
+        ttk.Button(bar, text="📂  Open another .h5",
                    command=self._open_file).pack(side=tk.LEFT, padx=4)
         self._type_label = ttk.Label(
             bar,
-            text=f"Tipo: {_TYPE_LABELS.get(self.h5_type, self.h5_type)}  |  "
-                 f"{len(self.cases)} casos  |  {os.path.basename(self.h5_path)}",
+            text=f"Type: {_TYPE_LABELS.get(self.h5_type, self.h5_type)}  |  "
+                 f"{len(self.cases)} cases  |  {os.path.basename(self.h5_path)}",
             foreground="#444444", font=("Arial", 9),
         )
         self._type_label.pack(side=tk.LEFT, padx=8)
@@ -907,7 +908,7 @@ class DoeSelectorUnifiedApp:
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         self._persistent_color_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            bar, text="🎨 Color fijo por caso",
+            bar, text="🎨 Fixed color per case",
             variable=self._persistent_color_var,
             command=self._replot_active_tab,
         ).pack(side=tk.LEFT, padx=4)
@@ -943,13 +944,13 @@ class DoeSelectorUnifiedApp:
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         self._invert_order_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            bar, text="⇅ Invertir zorder",
+            bar, text="⇅ Invert zorder",
             variable=self._invert_order_var,
             command=self._replot_active_tab,
         ).pack(side=tk.LEFT, padx=4)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
-        ttk.Label(bar, text="Eje X:", font=("Arial", 8)).pack(side=tk.LEFT)
+        ttk.Label(bar, text="X axis:", font=("Arial", 8)).pack(side=tk.LEFT)
         self._label_key_var = tk.StringVar(value="auto")
         self._label_key_combo = ttk.Combobox(
             bar, textvariable=self._label_key_var,
@@ -961,23 +962,26 @@ class DoeSelectorUnifiedApp:
 
         bar2 = ttk.Frame(self.root, padding=(4, 2))
         bar2.pack(side=tk.TOP, fill=tk.X)
-        ttk.Label(bar2, text="línea x=", font=("Arial", 8)).pack(side=tk.LEFT)
+        ttk.Label(bar2, text="line x=", font=("Arial", 8)).pack(side=tk.LEFT)
         self._vline_entry = ttk.Entry(bar2, width=8)
         self._vline_entry.pack(side=tk.LEFT, padx=(0, 4))
         ttk.Label(bar2, text="y=", font=("Arial", 8)).pack(side=tk.LEFT)
         self._hline_entry = ttk.Entry(bar2, width=8)
         self._hline_entry.pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Label(bar2, text="en:", font=("Arial", 8)).pack(side=tk.LEFT)
+        ttk.Label(bar2, text="in:", font=("Arial", 8)).pack(side=tk.LEFT)
         self._line_target_var = tk.StringVar(value=_LINE_TARGET_ALL)
         ttk.Combobox(bar2, textvariable=self._line_target_var, values=_LINE_TARGETS,
                      state="readonly", width=14).pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Button(bar2, text="+ Línea", command=self._add_reference_lines).pack(side=tk.LEFT, padx=2)
+        ttk.Label(bar2, text="note:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._line_note_entry = ttk.Entry(bar2, width=12)
+        self._line_note_entry.pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(bar2, text="+ Line", command=self._add_reference_lines).pack(side=tk.LEFT, padx=2)
         self._line_remove_var = tk.StringVar()
         self._line_remove_combo = ttk.Combobox(bar2, textvariable=self._line_remove_var,
                                                state="readonly", width=20)
         self._line_remove_combo.pack(side=tk.LEFT, padx=(4, 0))
-        ttk.Button(bar2, text="Borrar sel.", command=self._remove_selected_line).pack(side=tk.LEFT, padx=2)
-        ttk.Button(bar2, text="Borrar todas", command=self._clear_reference_lines).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar2, text="Delete sel.", command=self._remove_selected_line).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar2, text="Delete all", command=self._clear_reference_lines).pack(side=tk.LEFT, padx=2)
 
     def _refresh_label_key_combo(self) -> None:
         """Actualiza las opciones del combobox con las variables que tienen variación."""
@@ -1012,7 +1016,14 @@ class DoeSelectorUnifiedApp:
         _dp.LABEL_KEY = new_key
 
         self._populate_tree(self._filtered_cases())
-        self._replot_active_tab()
+        self._replot_all_tabs()
+
+    def _replot_all_tabs(self) -> None:
+        """Redibuja TODOS los paneles disponibles con la seleccion actual (ej. tras cambiar Eje X)."""
+        if not self.tree.selection():
+            return
+        for fn in self._available_plot_fns():
+            fn()
 
     def _active_tab_info(self):
         """(plot_fn, axes_dict, canvas) del tab actualmente activo, o (None, {}, None)."""
@@ -1064,28 +1075,30 @@ class DoeSelectorUnifiedApp:
     def _add_reference_lines(self) -> None:
         """Agrega los valores de los campos x=/y= como lineas de referencia y redibuja."""
         target = self._line_target_var.get() or _LINE_TARGET_ALL
+        note = self._line_note_entry.get().strip() or None
         new_entries = []
         v_txt = self._vline_entry.get().strip()
         if v_txt:
             try:
                 color = _LINE_COLORS[len(self._ref_lines) % len(_LINE_COLORS)]
-                entry = {"kind": "v", "value": float(v_txt), "target": target, "color": color}
+                entry = {"kind": "v", "value": float(v_txt), "target": target, "color": color, "note": note}
                 self._ref_lines.append(entry)
                 new_entries.append(entry)
             except ValueError:
-                messagebox.showwarning("Valor inválido", f"'{v_txt}' no es un número.", parent=self.root)
+                messagebox.showwarning("Invalid value", f"'{v_txt}' is not a number.", parent=self.root)
         h_txt = self._hline_entry.get().strip()
         if h_txt:
             try:
                 color = _LINE_COLORS[len(self._ref_lines) % len(_LINE_COLORS)]
-                entry = {"kind": "h", "value": float(h_txt), "target": target, "color": color}
+                entry = {"kind": "h", "value": float(h_txt), "target": target, "color": color, "note": note}
                 self._ref_lines.append(entry)
                 new_entries.append(entry)
             except ValueError:
-                messagebox.showwarning("Valor inválido", f"'{h_txt}' no es un número.", parent=self.root)
+                messagebox.showwarning("Invalid value", f"'{h_txt}' is not a number.", parent=self.root)
         if new_entries:
             self._vline_entry.delete(0, tk.END)
             self._hline_entry.delete(0, tk.END)
+            self._line_note_entry.delete(0, tk.END)
             self._refresh_line_remove_combo()
             _, axes, _ = self._active_tab_info()
             if all(self._line_in_view(e, axes) for e in new_entries):
@@ -1108,8 +1121,11 @@ class DoeSelectorUnifiedApp:
         self._replot_preserving_zoom()
 
     def _refresh_line_remove_combo(self) -> None:
-        labels = [f"{i}: {'x' if e['kind']=='v' else 'y'}={e['value']:g}  [{e['target']}]"
-                  for i, e in enumerate(self._ref_lines)]
+        labels = []
+        for i, e in enumerate(self._ref_lines):
+            base = f"{i}: {'x' if e['kind'] == 'v' else 'y'}={e['value']:g}"
+            note_txt = f"  nota='{e['note']}'" if e.get("note") else ""
+            labels.append(f"{base}{note_txt}  [{e['target']}]")
         self._line_remove_combo["values"] = labels
         self._line_remove_var.set(labels[-1] if labels else "")
 
@@ -1128,15 +1144,16 @@ class DoeSelectorUnifiedApp:
             target = entry["target"]
             targets = list(axes.values()) if target == _LINE_TARGET_ALL else (
                 [axes[target]] if target in axes else [])
+            label = entry.get("note") or f"{entry['value']:g}"
             for ax in targets:
                 if entry["kind"] == "v":
                     ax.axvline(entry["value"], color=entry["color"], lw=1.2, linestyle="--", zorder=10)
-                    ax.text(entry["value"], 0.98, f"{entry['value']:g}", transform=ax.get_xaxis_transform(),
+                    ax.text(entry["value"], 0.98, label, transform=ax.get_xaxis_transform(),
                             va="top", ha="right", color=entry["color"], rotation=90,
                             fontsize=14, zorder=11, clip_on=True)
                 else:
                     ax.axhline(entry["value"], color=entry["color"], lw=1.2, linestyle="--", zorder=10)
-                    ax.text(0.02, entry["value"], f"{entry['value']:g}", transform=ax.get_yaxis_transform(),
+                    ax.text(0.02, entry["value"], label, transform=ax.get_yaxis_transform(),
                             va="bottom", ha="left", color=entry["color"],
                             fontsize=14, zorder=11, clip_on=True)
 
@@ -1151,7 +1168,7 @@ class DoeSelectorUnifiedApp:
         self.paned.add(self.left_frame,   minsize=240, width=self._LEFT_WIDTH)
         self.paned.add(self.center_frame, minsize=400, width=self._CENTER_WIDTH)
 
-    # ── LEFT PANEL ────────────────────────────────────────────────────────────
+    # ── PANEL IZQUIERDO ────────────────────────────────────────────────────────────
     def _build_left_panel(self) -> None:
         lf = self.left_frame
 
@@ -1160,7 +1177,7 @@ class DoeSelectorUnifiedApp:
                   font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=8, pady=(6, 0))
         ttk.Label(
             lf,
-            text=f"{len(self.cases)} casos  ·  {_TYPE_LABELS.get(self.h5_type, '')}",
+            text=f"{len(self.cases)} cases  ·  {_TYPE_LABELS.get(self.h5_type, '')}",
             font=("Arial", 9), foreground="#555555",
         ).pack(anchor=tk.W, padx=8, pady=(0, 4))
 
@@ -1172,10 +1189,10 @@ class DoeSelectorUnifiedApp:
         ttk.Entry(bar, textvariable=self._filter_var_str,
                   font=("Arial", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(bar, text=" 🔍", font=("Arial", 9)).pack(side=tk.LEFT)
-        ttk.Button(bar, text="Columnas…",
+        ttk.Button(bar, text="Columns…",
                    command=self._show_columns_dialog).pack(side=tk.LEFT, padx=(6, 0))
 
-        # Run filter (only for indicator types)
+        # Filtro de run (solo para tipos indicador)
         if self.h5_type in (TYPE_DOE_INDICATOR, TYPE_NOISE_IND):
             self._build_run_filter(lf)
 
@@ -1187,53 +1204,46 @@ class DoeSelectorUnifiedApp:
         # Action buttons
         btn = ttk.Frame(lf)
         btn.pack(fill=tk.X, padx=8, pady=6)
-        ttk.Button(btn, text="Seleccionar todo",
+        ttk.Button(btn, text="Select all",
                    command=self._select_all).pack(fill=tk.X, pady=1)
-        ttk.Button(btn, text="Limpiar selección",
+        ttk.Button(btn, text="Clear selection",
                    command=self._clear_sel).pack(fill=tk.X, pady=1)
         ttk.Separator(btn).pack(fill=tk.X, pady=4)
-        ttk.Button(btn, text="Plot Señales ▶",
-                   command=self._plot_signals).pack(fill=tk.X, pady=1, ipady=3)
-        if self.h5_type == TYPE_DOE_RESULTS:
-            ttk.Button(btn, text="Plot Fuerzas ▶",
-                       command=self._plot_forces).pack(fill=tk.X, pady=1, ipady=3)
-        if self._has_deflex:
-            ttk.Button(btn, text="Plot Deflexión ▶",
-                       command=self._plot_deflex).pack(fill=tk.X, pady=1, ipady=3)
-        if self.h5_type in (TYPE_DOE_INDICATOR, TYPE_NOISE_IND):
-            ttk.Button(btn, text="Plot I_t ▶",
-                       command=self._plot_It).pack(fill=tk.X, pady=1, ipady=2)
-        ttk.Button(btn, text="Limpiar plot",
+        ttk.Button(btn, text="Plot (all tabs) ▶",
+                   command=self._plot_active_tab).pack(fill=tk.X, pady=1, ipady=3)
+        ttk.Button(btn, text="+ Add selection to plot",
+                   command=self._add_selection_to_plot).pack(fill=tk.X, pady=1, ipady=2)
+        ttk.Button(btn, text="Clear plot",
                    command=self._clear_signal_plot).pack(fill=tk.X, pady=1)
         ttk.Separator(btn).pack(fill=tk.X, pady=4)
-        self._ctrl_label_var = tk.StringVar(value="Control manual: ninguno")
+        self._ctrl_label_var = tk.StringVar(value="Manual control: none")
         ttk.Label(btn, textvariable=self._ctrl_label_var,
                   foreground="#cc0000", font=("Arial", 8)).pack(anchor=tk.W)
-        ttk.Button(btn, text="⭐ Marcar como control",
+        ttk.Button(btn, text="⭐ Mark as control",
                    command=self._set_manual_control).pack(fill=tk.X, pady=1)
-        ttk.Button(btn, text="✖ Quitar control manual",
+        ttk.Button(btn, text="✖ Remove manual control",
                    command=self._clear_manual_control).pack(fill=tk.X, pady=1)
 
     def _set_manual_control(self) -> None:
         """Marca el caso seleccionado en el árbol como control manual."""
         sel = self.tree.selection()
         if not sel:
-            messagebox.showwarning("Sin selección", "Selecciona un caso primero.", parent=self.root)
+            messagebox.showwarning("No selection", "Select a case first.", parent=self.root)
             return
         if len(sel) > 1:
-            messagebox.showwarning("Selección múltiple", "Selecciona solo un caso.", parent=self.root)
+            messagebox.showwarning("Multiple selection", "Select only one case.", parent=self.root)
             return
         c = self._iid_to_case.get(sel[0])
         if c is None:
             return
         self._manual_control_group = c["group"]
-        self._ctrl_label_var.set(f"Control manual: {c['group']}")
+        self._ctrl_label_var.set(f"Manual control: {c['group']}")
         self._populate_tree(self._filtered_cases())
 
     def _clear_manual_control(self) -> None:
         """Elimina el control manual."""
         self._manual_control_group = None
-        self._ctrl_label_var.set("Control manual: ninguno")
+        self._ctrl_label_var.set("Manual control: none")
         self._populate_tree(self._filtered_cases())
 
     def _is_control(self, c: dict) -> bool:
@@ -1244,9 +1254,20 @@ class DoeSelectorUnifiedApp:
             return True
         return False
 
+    def _mark_values_on_colorbar(self, cbar, marks: list) -> None:
+        """marks: lista de (label_val, color). Dibuja una linea por caso graficado, con
+        borde negro para que resalte contra el degradado del colorbar."""
+        if cbar is None:
+            return
+        for v, color in marks:
+            if not np.isfinite(v):
+                continue
+            cbar.ax.axvline(v, color="black", lw=3.5, zorder=9)
+            cbar.ax.axvline(v, color=color, lw=1.8, zorder=10)
+
     def _build_run_filter(self, parent: ttk.Frame) -> None:
         """Panel de selección de indicadores (checkboxes) para tipos indicador."""
-        frm = ttk.LabelFrame(parent, text="  Indicadores  ", padding=4)
+        frm = ttk.LabelFrame(parent, text="  Indicators  ", padding=4)
         frm.pack(fill=tk.X, padx=8, pady=(0, 4))
 
         indicators = self._extract_indicators()
@@ -1259,7 +1280,7 @@ class DoeSelectorUnifiedApp:
         # Checkbox "Todos"
         self._ind_all_var = tk.BooleanVar(value=True)
         self._ind_all_chk = ttk.Checkbutton(
-            frm, text="(todos)", variable=self._ind_all_var,
+            frm, text="(all)", variable=self._ind_all_var,
             command=self._on_ind_all_toggle,
         )
         self._ind_all_chk.pack(anchor=tk.W)
@@ -1279,7 +1300,7 @@ class DoeSelectorUnifiedApp:
 
         # t_d / t_d_no_FAR toggle
         self._use_no_far_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frm, text="usar t_d_no_FAR",
+        ttk.Checkbutton(frm, text="use t_d_no_FAR",
                         variable=self._use_no_far_var).pack(anchor=tk.W)
 
     def _extract_indicators(self) -> List[str]:
@@ -1331,7 +1352,7 @@ class DoeSelectorUnifiedApp:
                 except Exception:
                     pass
 
-        # Build columns: "case" + visible var_val keys + t_d / t_d_no_FAR per run (indicators)
+        # Arma columnas: "case" + claves visibles de var_val + t_d / t_d_no_FAR por run (indicadores)
         cols = ["case"] + self._visible_keys
         if self.h5_type in (TYPE_DOE_INDICATOR, TYPE_NOISE_IND) and self._all_runs:
             for rn in self._all_runs[:4]:
@@ -1372,7 +1393,7 @@ class DoeSelectorUnifiedApp:
         self.tree.grid(row=0, column=0, sticky="nsew")
         self._sb_y.grid(row=0, column=1, sticky="ns")
         self._sb_x.grid(row=1, column=0, sticky="ew")
-        self.tree.bind("<Double-1>", lambda _: self._plot_signals())
+        self.tree.bind("<Double-1>", lambda _: self._plot_active_tab())
 
         self._populate_tree(self._filtered_cases())
 
@@ -1476,7 +1497,41 @@ class DoeSelectorUnifiedApp:
     def _clear_sel(self) -> None:
         self.tree.selection_remove(self.tree.get_children())
 
-    # ── CENTER PANEL ──────────────────────────────────────────────────────────
+    def _available_plot_fns(self) -> list:
+        """Todas las funciones de plot disponibles para este archivo (no solo la del tab activo)."""
+        fns = []
+        if hasattr(self, "sig_canvas"):
+            fns.append(self._plot_signals)
+        if hasattr(self, "force_canvas"):
+            fns.append(self._plot_forces)
+        if hasattr(self, "deflex_canvas"):
+            fns.append(self._plot_deflex)
+        if hasattr(self, "It_canvas"):
+            fns.append(self._plot_It)
+        return fns
+
+    def _plot_active_tab(self) -> None:
+        """Grafica (reemplazando) la seleccion actual en TODAS las pestañas disponibles."""
+        fns = self._available_plot_fns()
+        if not fns:
+            messagebox.showinfo("No panel", "This format has no plottable panel here "
+                                             "(use the ▶ buttons on the slots).", parent=self.root)
+            return
+        for fn in fns:
+            fn()
+
+    def _add_selection_to_plot(self) -> None:
+        """Une la seleccion actual con lo ultimo graficado y redibuja en TODAS las pestañas disponibles."""
+        new_sel = set(self.tree.selection())
+        if not new_sel:
+            messagebox.showwarning("No selection", "Select at least one case to add.",
+                                   parent=self.root)
+            return
+        self.tree.selection_set(list(self._plotted_iids | new_sel))
+        for fn in self._available_plot_fns():
+            fn()
+
+    # ── PANEL CENTRAL ──────────────────────────────────────────────────────────
     def _build_center_panel(self) -> None:
         cf = self.center_frame
 
@@ -1493,8 +1548,8 @@ class DoeSelectorUnifiedApp:
             self._sig_tab   = ttk.Frame(self._nb)
             self._force_tab = ttk.Frame(self._nb)
             self._It_tab    = ttk.Frame(self._nb)
-            self._nb.add(self._sig_tab,   text=" Señales ")
-            self._nb.add(self._force_tab, text=" Fuerzas ")
+            self._nb.add(self._sig_tab,   text=" Signals ")
+            self._nb.add(self._force_tab, text=" Forces ")
             self._nb.add(self._It_tab,    text=" I_t(t) ")
             self._build_signal_canvas(self._sig_tab)
             self._build_force_canvas(self._force_tab)
@@ -1509,8 +1564,8 @@ class DoeSelectorUnifiedApp:
             self._nb.pack(fill=tk.BOTH, expand=True)
             self._sig_tab   = ttk.Frame(self._nb)
             self._force_tab = ttk.Frame(self._nb)
-            self._nb.add(self._sig_tab,   text=" Señales ")
-            self._nb.add(self._force_tab, text=" Fuerzas ")
+            self._nb.add(self._sig_tab,   text=" Signals ")
+            self._nb.add(self._force_tab, text=" Forces ")
             self._build_signal_canvas(self._sig_tab)
             self._build_force_canvas(self._force_tab)
             if has_deflex:
@@ -1524,19 +1579,19 @@ class DoeSelectorUnifiedApp:
             self._nb.pack(fill=tk.BOTH, expand=True)
             self._sig_tab = ttk.Frame(self._nb)
             self._It_tab  = ttk.Frame(self._nb)
-            self._nb.add(self._sig_tab, text=" Señales ")
+            self._nb.add(self._sig_tab, text=" Signals ")
             self._nb.add(self._It_tab,  text=" I_t(t) ")
             self._build_signal_canvas(self._sig_tab)
             self._build_It_canvas(self._It_tab)
         elif has_signals and self.h5_type == TYPE_NOISE_IND:
-            # For noise_indicator type, show two vertical I_t slots with run checkboxes
+            # Para el tipo noise_indicator, muestra dos slots verticales de I_t con checkboxes de run
             self._build_noise_indicator_slots(cf)
         elif has_signals:
             self._sig_tab = cf
             self._build_signal_canvas(cf)
         elif has_snr_only:
-            ttk.Label(cf, text="Señales no disponibles en doe_model_snr_results.h5.\n"
-                                "Usa el panel derecho para las figuras de SNR.",
+            ttk.Label(cf, text="Signals not available in doe_model_snr_results.h5.\n"
+                                "Use the summary panel for the SNR figures.",
                       foreground="#777777", font=("Arial", 11),
                       anchor=tk.CENTER, justify=tk.CENTER).pack(expand=True)
 
@@ -1549,9 +1604,9 @@ class DoeSelectorUnifiedApp:
 
         self.deflex_canvas = FigureCanvasTkAgg(self.deflex_fig, master=parent)
         self.deflex_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        toolbar = NavigationToolbar2Tk(self.deflex_canvas, parent, pack_toolbar=False)
-        toolbar.update()
-        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.deflex_toolbar = NavigationToolbar2Tk(self.deflex_canvas, parent, pack_toolbar=False)
+        self.deflex_toolbar.update()
+        self.deflex_toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.deflex_canvas.draw()
 
     def _init_deflex_axes(self) -> None:
@@ -1563,7 +1618,7 @@ class DoeSelectorUnifiedApp:
         self.ax_deflex_v.set_xlabel("Time (s)", fontsize=14)
         self.ax_deflex_v.grid(False)
         self.ax_deflex_v.ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
-        self.deflex_fig.suptitle("Selecciona casos y presiona  Plot Deflexión ▶")
+        self.deflex_fig.suptitle("Select cases and press  Plot ▶")
 
     def _build_force_canvas(self, parent: tk.Frame) -> None:
         """Crea tres subplots embebidos para res_R_p (Fx, Fy, Fz)."""
@@ -1575,9 +1630,9 @@ class DoeSelectorUnifiedApp:
 
         self.force_canvas = FigureCanvasTkAgg(self.force_fig, master=parent)
         self.force_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        toolbar = NavigationToolbar2Tk(self.force_canvas, parent, pack_toolbar=False)
-        toolbar.update()
-        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.force_toolbar = NavigationToolbar2Tk(self.force_canvas, parent, pack_toolbar=False)
+        self.force_toolbar.update()
+        self.force_toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.force_canvas.draw()
 
     def _init_force_axes(self) -> None:
@@ -1590,7 +1645,7 @@ class DoeSelectorUnifiedApp:
             if i < 2:
                 ax.tick_params(labelbottom=False)
         self.ax_force_3.set_xlabel("Time (s)", fontsize=14)
-        self.force_fig.suptitle("Selecciona casos y presiona  Plot Fuerzas ▶")
+        self.force_fig.suptitle("Select cases and press  Plot ▶")
 
     def _build_signal_canvas(self, parent: tk.Frame) -> None:
         """Crea los dos subplots (Axial_disp + Axial_vel) embebidos."""
@@ -1601,9 +1656,9 @@ class DoeSelectorUnifiedApp:
 
         self.sig_canvas = FigureCanvasTkAgg(self.sig_fig, master=parent)
         self.sig_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        toolbar = NavigationToolbar2Tk(self.sig_canvas, parent, pack_toolbar=False)
-        toolbar.update()
-        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.sig_toolbar = NavigationToolbar2Tk(self.sig_canvas, parent, pack_toolbar=False)
+        self.sig_toolbar.update()
+        self.sig_toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.sig_canvas.draw()
 
     def _build_It_canvas(self, parent: tk.Frame) -> None:
@@ -1614,25 +1669,25 @@ class DoeSelectorUnifiedApp:
 
         self.It_canvas = FigureCanvasTkAgg(self.It_fig, master=parent)
         self.It_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        toolbar = NavigationToolbar2Tk(self.It_canvas, parent, pack_toolbar=False)
-        toolbar.update()
-        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.It_toolbar = NavigationToolbar2Tk(self.It_canvas, parent, pack_toolbar=False)
+        self.It_toolbar.update()
+        self.It_toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.It_canvas.draw()
 
     def _build_noise_indicator_slots(self, parent: tk.Frame) -> None:
         """Crea dos subfiguras verticales, cada una con selector de indicador
         y checkboxes multi-run para hacer overlay de I_t(t).
         """
-        top_zone = ttk.LabelFrame(parent, text=" I_t Slot Top ", padding=4)
-        bot_zone = ttk.LabelFrame(parent, text=" I_t Slot Bot ", padding=4)
+        top_zone = ttk.LabelFrame(parent, text=" I_t - Top ", padding=4)
+        bot_zone = ttk.LabelFrame(parent, text=" I_t - Bottom ", padding=4)
         top_zone.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
         bot_zone.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
-        # Controls and canvas for each zone
+        # Controles y canvas para cada zona
         def make_slot(zone, slot):
             ctrl = ttk.Frame(zone)
             ctrl.pack(fill=tk.X)
-            ttk.Label(ctrl, text="Indicador:").pack(side=tk.LEFT)
+            ttk.Label(ctrl, text="Indicator:").pack(side=tk.LEFT)
             inds = self._extract_indicators()
             ind_var = tk.StringVar(value=inds[0] if inds else "")
             ind_combo = ttk.Combobox(ctrl, values=inds, textvariable=ind_var, state="readonly", width=20)
@@ -1640,7 +1695,7 @@ class DoeSelectorUnifiedApp:
             ttk.Button(ctrl, text="Refresh runs", command=lambda: self._populate_run_checks(slot)).pack(side=tk.LEFT, padx=4)
             ttk.Button(ctrl, text="Plot ▶", command=lambda: self._plot_It_slot(slot)).pack(side=tk.LEFT, padx=4)
 
-            # Scrollable frame for run checkboxes
+            # Frame con scroll para los checkboxes de run
             box_frame = ttk.Frame(zone)
             box_frame.pack(fill=tk.BOTH, expand=False, pady=(4,2))
             canvas = tk.Canvas(box_frame, height=120)
@@ -1653,7 +1708,7 @@ class DoeSelectorUnifiedApp:
 
             inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-            # Canvas for figure
+            # Canvas para la figura
             fig_frame = ttk.Frame(zone)
             fig_frame.pack(fill=tk.BOTH, expand=True)
             fig = Figure(constrained_layout=True)
@@ -1698,7 +1753,7 @@ class DoeSelectorUnifiedApp:
         run_vars = self.__dict__.get(f"_{slot}_run_vars", {})
         selected_runs = [r for r, v in run_vars.items() if v.get()]
         if not selected_runs:
-            messagebox.showwarning("Sin selection", "Selecciona al menos un run.", parent=self.root)
+            messagebox.showwarning("No selection", "Select at least one run.", parent=self.root)
             return
         ax = self.__dict__.get(f"_{slot}_ax")
         fig = self.__dict__.get(f"_{slot}_fig")
@@ -1755,7 +1810,7 @@ class DoeSelectorUnifiedApp:
         # self.ax_vel.grid(True, linestyle=":", color="#bfbfbf", linewidth=0.6, alpha=0.6)
         self.ax_vel.grid(False)
         self.ax_vel.tick_params(labelsize=12)
-        self.sig_fig.suptitle("Selecciona casos y presiona  Plot Señales ▶")
+        self.sig_fig.suptitle("Select cases and press  Plot ▶")
 
     def _init_It_axis(self) -> None:
         self.ax_It.set_xlabel(r"$t$ (s)", fontsize=14)
@@ -1763,18 +1818,18 @@ class DoeSelectorUnifiedApp:
         # self.ax_It.grid(True, linestyle=":", color="#bfbfbf", linewidth=0.6, alpha=0.6)
         self.ax_It.grid(False)
         self.ax_It.tick_params(labelsize=12)
-        self.It_fig.suptitle("Selecciona casos y presiona  Plot I_t ▶")
+        self.It_fig.suptitle("Select cases and press  Plot ▶")
 
-    # ── SIGNAL PLOT ───────────────────────────────────────────────────────────
+    # ── PLOT DE SEÑALES ───────────────────────────────────────────────────────────
     def _plot_signals(self) -> None:
         if not hasattr(self, "sig_canvas"):
-            messagebox.showinfo("Sin panel", "Este formato no tiene panel de señales.",
+            messagebox.showinfo("No panel", "This format has no signals panel.",
                                 parent=self.root)
             return
         sel_iids = self.tree.selection()
         if not sel_iids:
-            messagebox.showwarning("Sin selección",
-                                   "Selecciona al menos un caso en la tabla.",
+            messagebox.showwarning("No selection",
+                                   "Select at least one case in the table.",
                                    parent=self.root)
             return
         selected = [self._iid_to_case[i] for i in sel_iids if i in self._iid_to_case]
@@ -1794,7 +1849,7 @@ class DoeSelectorUnifiedApp:
         use_fixed = getattr(self, "_persistent_color_var", None)
         use_fixed = use_fixed.get() if use_fixed is not None else True
 
-        # Dynamic colormap — recalculated on selected cases only
+        # Colormap dinámico — se recalcula solo sobre los casos seleccionados
         if not use_fixed:
             dyn_vals = [c["label_val"] for c in selected
                         if c.get("group", "") != "control" and np.isfinite(c.get("label_val", float("nan")))]
@@ -1815,6 +1870,7 @@ class DoeSelectorUnifiedApp:
         _ctrl_lst = [c for c in selected if self._is_control(c)]
         _non_ctrl = list(reversed(_non_ctrl)) if _invert else _non_ctrl
         _plot_order = _non_ctrl + _ctrl_lst
+        _cbar_marks = []
         for ci, c in enumerate(_plot_order):
             is_ctrl  = self._is_control(c)
             if is_ctrl:
@@ -1826,6 +1882,7 @@ class DoeSelectorUnifiedApp:
                 clr = dyn_cmap(dyn_norm(lv_dyn)) if np.isfinite(lv_dyn) else color_azul
             lk   = c.get("label_key", "")
             lv   = c.get("label_val", float("nan"))
+            _cbar_marks.append((lv, clr))
             if is_ctrl:
                 lbl = "control"
             elif np.isfinite(lv):
@@ -1890,22 +1947,21 @@ class DoeSelectorUnifiedApp:
             )
             self._cbar.formatter = mticker.FuncFormatter(lambda x, _: f"{x:.3g}")
             self._cbar.update_ticks()
+            self._mark_values_on_colorbar(self._cbar, _cbar_marks)
 
-        self.sig_fig.suptitle(f"{lk_disp}  —  {n} caso(s)")
+        self.sig_fig.suptitle(f"{lk_disp}  —  {n} case(s)")
         self._draw_reference_lines({"Señales: disp": self.ax_disp, "Señales: vel": self.ax_vel})
         self.sig_canvas.draw()
-
-        # Switch to Signals tab if Notebook exists
-        if hasattr(self, "_nb"):
-            self._nb.select(0)
+        self.sig_toolbar.update()  # refresca "Home" a la vista actual (con las lineas nuevas incluidas)
+        self._plotted_iids = set(self.tree.selection())
 
     def _plot_forces(self) -> None:
         if not hasattr(self, "force_canvas"):
-            messagebox.showinfo("Sin panel", "Este formato no tiene panel de fuerzas.", parent=self.root)
+            messagebox.showinfo("No panel", "This format has no forces panel.", parent=self.root)
             return
         sel_iids = self.tree.selection()
         if not sel_iids:
-            messagebox.showwarning("Sin selección", "Selecciona al menos un caso en la tabla.", parent=self.root)
+            messagebox.showwarning("No selection", "Select at least one case in the table.", parent=self.root)
             return
         selected = [self._iid_to_case[i] for i in sel_iids if i in self._iid_to_case]
         if not selected:
@@ -1935,6 +1991,7 @@ class DoeSelectorUnifiedApp:
                 dyn_norm = mcolors.Normalize(vmin=0, vmax=1)
             dyn_cmap = matplotlib.colormaps["viridis"]
 
+        _cbar_marks_f = []
         for ci, c in enumerate(plot_order):
             data = c.get("forces", {}).get("res_R_p")
             if data is None:
@@ -1953,7 +2010,12 @@ class DoeSelectorUnifiedApp:
             else:
                 lv = c.get("label_val", float("nan"))
                 color = dyn_cmap(dyn_norm(lv)) if np.isfinite(lv) else color_azul
-            label = "control" if is_ctrl else c.get("group", "case")
+            lk = c.get("label_key", "")
+            lv = c.get("label_val", float("nan"))
+            _cbar_marks_f.append((lv, color))
+            label = "control" if is_ctrl else (
+                f"{_col_header(lk)}={lv:.3g}" if np.isfinite(lv) else c.get("group", "?")
+            )
             lw = 2.2 if is_ctrl else _lw_nc
             alpha = _ctrl_alp if is_ctrl else _alp_nc
             zorder = _ctrl_zo if is_ctrl else (3 + ci)
@@ -1990,25 +2052,22 @@ class DoeSelectorUnifiedApp:
                 label=lk_f, shrink=0.85, orientation="horizontal", pad=0.08)
             self._force_cbar.formatter = mticker.FuncFormatter(lambda x, _: f"{x:.3g}")
             self._force_cbar.update_ticks()
+            self._mark_values_on_colorbar(self._force_cbar, _cbar_marks_f)
 
-        self.force_fig.suptitle(f"res_R_p — {len(selected)} caso(s)")
+        self.force_fig.suptitle(f"res_R_p — {len(selected)} case(s)")
         self._draw_reference_lines({"Fuerzas: F1": self.ax_force_1, "Fuerzas: F2": self.ax_force_2,
                                     "Fuerzas: F3": self.ax_force_3})
         self.force_canvas.draw()
-
-        if hasattr(self, "_nb"):
-            try:
-                self._nb.select(1)
-            except Exception:
-                pass
+        self.force_toolbar.update()
+        self._plotted_iids = set(self.tree.selection())
 
     def _plot_deflex(self) -> None:
         if not hasattr(self, "deflex_canvas"):
-            messagebox.showinfo("Sin panel", "Este archivo no contiene datos Out_Deflex.", parent=self.root)
+            messagebox.showinfo("No panel", "This file has no Out_Deflex data.", parent=self.root)
             return
         sel_iids = self.tree.selection()
         if not sel_iids:
-            messagebox.showwarning("Sin selección", "Selecciona al menos un caso en la tabla.", parent=self.root)
+            messagebox.showwarning("No selection", "Select at least one case in the table.", parent=self.root)
             return
         selected = [self._iid_to_case[i] for i in sel_iids if i in self._iid_to_case]
         if not selected:
@@ -2042,6 +2101,7 @@ class DoeSelectorUnifiedApp:
         _disp_key = "Axial_disp_out_deflex"
         _vel_key  = "Axial_vel_out_deflex"
 
+        _cbar_marks_d = []
         for ci, c in enumerate(plot_order):
             od = c.get("out_deflex", {})
             is_ctrl = self._is_control(c)
@@ -2051,6 +2111,7 @@ class DoeSelectorUnifiedApp:
             )
             lk  = c.get("label_key", "")
             lv  = c.get("label_val", float("nan"))
+            _cbar_marks_d.append((lv, color))
             lbl = "control" if is_ctrl else (
                 f"{_col_header(lk)}={lv:.3g}" if np.isfinite(lv) else c.get("group", "?")
             )
@@ -2103,18 +2164,13 @@ class DoeSelectorUnifiedApp:
                 label=lk_disp, shrink=0.85, orientation="horizontal", pad=0.08)
             self._deflex_cbar.formatter = mticker.FuncFormatter(lambda x, _: f"{x:.3g}")
             self._deflex_cbar.update_ticks()
+            self._mark_values_on_colorbar(self._deflex_cbar, _cbar_marks_d)
 
-        self.deflex_fig.suptitle(f"Out Deflex  —  {lk_disp}  —  {n} caso(s)")
+        self.deflex_fig.suptitle(f"Out Deflex  —  {lk_disp}  —  {n} case(s)")
         self._draw_reference_lines({"Deflex: disp": self.ax_deflex_d, "Deflex: vel": self.ax_deflex_v})
         self.deflex_canvas.draw()
-
-        if hasattr(self, "_nb"):
-            try:
-                tabs = [self._nb.tab(i, "text") for i in range(self._nb.index("end"))]
-                idx  = next(i for i, t in enumerate(tabs) if "Deflex" in t)
-                self._nb.select(idx)
-            except (StopIteration, Exception):
-                pass
+        self.deflex_toolbar.update()
+        self._plotted_iids = set(self.tree.selection())
 
     def _clear_signal_plot(self) -> None:
         if not hasattr(self, "sig_canvas"):
@@ -2129,15 +2185,16 @@ class DoeSelectorUnifiedApp:
         self.ax_vel.cla()
         self._init_signal_axes()
         self.sig_canvas.draw()
+        self._plotted_iids.clear()
 
-    # ── I_t PLOT ──────────────────────────────────────────────────────────────
+    # ── PLOT DE I_t ──────────────────────────────────────────────────────────────
     def _plot_It(self) -> None:
         if not hasattr(self, "It_canvas"):
             return
         sel_iids = self.tree.selection()
         if not sel_iids:
-            messagebox.showwarning("Sin selección",
-                                   "Selecciona al menos un caso en la tabla.",
+            messagebox.showwarning("No selection",
+                                   "Select at least one case in the table.",
                                    parent=self.root)
             return
         selected = [self._iid_to_case[i] for i in sel_iids if i in self._iid_to_case]
@@ -2248,7 +2305,7 @@ class DoeSelectorUnifiedApp:
         self.ax_It.set_yscale(_it_plot_yscale(runs_to_show))
 
         far_txt = " (no FAR)" if use_no_far else ""
-        run_txt = run_filter or "(todos)"
+        run_txt = run_filter or "(all)"
         self.ax_It.set_title(f"I_t(t){far_txt}  —  run: {run_txt}", fontsize=13)
 
         n = len(selected) * len(runs_to_show)
@@ -2258,12 +2315,10 @@ class DoeSelectorUnifiedApp:
         self._draw_reference_lines({"I_t": self.ax_It})
         self.It_fig.tight_layout()
         self.It_canvas.draw()
+        self.It_toolbar.update()
+        self._plotted_iids = set(self.tree.selection())
 
-        # Switch to I_t tab if Notebook exists
-        if hasattr(self, "_nb"):
-            self._nb.select(1)
-
-    # ── SUMMARY PLOT ──────────────────────────────────────────────────────────
+    # ── PLOT DE RESUMEN ──────────────────────────────────────────────────────────
     def _refresh_summary(self) -> None:
         if not self._summary_entries:
             return
@@ -2284,12 +2339,12 @@ class DoeSelectorUnifiedApp:
                     fig = _build_noise_overlay_fig(self.cases, extra["signal"])
                 else:
                     kw = dict(extra)
-                    kw["out_dir"] = None   # preview only
+                    kw["out_dir"] = None   # solo previsualizar
                     fig = _capture_new_figure(func, **kw)
 
             if fig is None:
-                messagebox.showwarning("Sin figura",
-                                       f"No se pudo generar la figura:\n{label}",
+                messagebox.showwarning("No figure",
+                                       f"Could not generate the figure:\n{label}",
                                        parent=self.root)
                 return
 
@@ -2298,14 +2353,14 @@ class DoeSelectorUnifiedApp:
                           self._sum_toolbar_frame, self._fig_holder, "summary")
 
         except Exception as exc:
-            messagebox.showerror("Error al generar figura",
+            messagebox.showerror("Error generating figure",
                                  f"{type(exc).__name__}: {exc}", parent=self.root)
 
     def _save_summary(self) -> None:
         fig = self._fig_holder.get("summary")
         if fig is None:
-            messagebox.showinfo("Sin figura",
-                                "Primero presiona ▶ Preview para generar una figura.",
+            messagebox.showinfo("No figure",
+                                "Press ▶ Preview first to generate a figure.",
                                 parent=self.root)
             return
         out_dir = os.path.join(os.path.dirname(self.h5_path), "figs_indicators")
@@ -2315,15 +2370,15 @@ class DoeSelectorUnifiedApp:
         path    = os.path.join(out_dir, fname)
         try:
             fig.savefig(path, dpi=300, bbox_inches="tight")
-            messagebox.showinfo("Guardado", f"Figura guardada en:\n{path}", parent=self.root)
+            messagebox.showinfo("Saved", f"Figure saved to:\n{path}", parent=self.root)
         except Exception as exc:
-            messagebox.showerror("Error al guardar", str(exc), parent=self.root)
+            messagebox.showerror("Error saving", str(exc), parent=self.root)
 
-    # ── OPEN FILE ─────────────────────────────────────────────────────────────
+    # ── ABRIR ARCHIVO ─────────────────────────────────────────────────────────────
     def _open_file(self) -> None:
         path = filedialog.askopenfilename(
             parent=self.root,
-            title="Abrir archivo HDF5 DOE",
+            title="Open DOE HDF5 file",
             filetypes=[("HDF5 files", "*.h5 *.hdf5"), ("All files", "*.*")],
             initialdir=os.path.dirname(self.h5_path),
         )
@@ -2332,7 +2387,7 @@ class DoeSelectorUnifiedApp:
         try:
             self._load_file(path)
         except Exception as exc:
-            messagebox.showerror("Error al cargar", str(exc), parent=self.root)
+            messagebox.showerror("Error loading", str(exc), parent=self.root)
             return
 
         # Rebuild UI
@@ -2379,7 +2434,7 @@ def main() -> None:
         # Sin parent explicito: tkinter crea y maneja su propio root implicito,
         # mas confiable en Windows que un root manual withdraw()-eado.
         h5_path = filedialog.askopenfilename(
-            title="Selecciona un archivo HDF5 DOE",
+            title="Select a DOE HDF5 file",
             filetypes=[("HDF5 files", "*.h5 *.hdf5"), ("All files", "*.*")],
         )
         if not h5_path:
