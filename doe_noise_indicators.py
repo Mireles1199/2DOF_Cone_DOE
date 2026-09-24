@@ -342,18 +342,18 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   False,
         "name":      None,
         "indicator": "green_default",
+        "mode":      "by_revolution",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":          _F_MODAL,  # Hz — filtro bandpass
-            "f_cycle":          _F_REV,    # Hz — ventana por revolución
-            "N_cycles_per_seg": 4.0,
-            "step_cycles":      1.0,
-            "data_filtrated":       True,
-            "hilbert":              False,
-            "while_loop_extend":    False,
+            "T_rev":                 _T_REV,
+            "N_rev_window":          4.0,
+            "step_rev":              1.0,
+            "data_filtrated":        True,
+            "hilbert":               False,
+            "while_loop_extend":     False,
             "cycles_cluster_points": 35,
-            "thein_sen":            False,
+            "thein_sen":             False,
         },
     },
 
@@ -364,18 +364,18 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   False,
         "name":      None,
         "indicator": "green_default",
+        "mode":      "by_modal",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":          _F_MODAL,  # Hz — filtro bandpass y ciclo
-            "f_cycle":          _F_MODAL,  # Hz — ventana por periodo modal
-            "N_cycles_per_seg": 4,
-            "step_cycles":      1.0,
-            "data_filtrated":       True,
-            "hilbert":              False,
-            "while_loop_extend":    False,
+            "T_modal":               _T_MODAL,
+            "N_modal_window":        4,
+            "step_modal":            1.0,
+            "data_filtrated":        True,
+            "hilbert":               False,
+            "while_loop_extend":     False,
             "cycles_cluster_points": 35,
-            "thein_sen":            False,
+            "thein_sen":             False,
         },
     },
 
@@ -386,13 +386,13 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   True,
         "name":      None,
         "indicator": "green_fixed",
+        "mode":      "by_revolution",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":          _F_MODAL,  # Hz — filtro bandpass
-            "f_cycle":          _F_REV,    # Hz — ventana por revolución
-            "N_cycles_per_seg": 7,
-            "step_cycles":      1,
+            "T_rev":            _T_REV,
+            "N_rev_window":     7,
+            "step_rev":         1,
             "data_filtrated":       True,
             "lambda_ewma":          None,
             "accumulate":           False,
@@ -411,15 +411,13 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   False,
         "name":      None,
         "indicator": "green_fixed",
+        "mode":      "by_modal",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
-        "param_mode": "by_revolution",
-
         "params_physical": {
-            "f_modal":          _F_MODAL,  # Hz — filtro bandpass y ciclo
-            "f_cycle":          _F_MODAL,  # Hz — ventana por periodo modal
-            "N_cycles_per_seg": 4,
-            "step_cycles":      1.0,
+            "T_modal":          _T_MODAL,
+            "N_modal_window":   4,
+            "step_modal":       1.0,
             "data_filtrated":       True,
             "lambda_ewma":          None,
             "accumulate":           False,
@@ -483,8 +481,12 @@ def _auto_name(cfg: Dict[str, Any]) -> str:
     # Green (default / fixed)  — sin ventana auxiliar
     # ------------------------------------------------------------------
     if ind in ("green_default", "green_fixed"):
-        dec = int(pp.get("N_cycles_per_seg", 0))
-        s   = int(pp.get("step_cycles", 1))
+        if cfg.get("mode") == "by_revolution":
+            dec = int(pp.get("N_rev_window", 0))
+            s   = int(pp.get("step_rev", 1))
+        else:  # by_modal
+            dec = int(pp.get("N_modal_window", 0))
+            s   = int(pp.get("step_modal", 1))
         return f"{ind}_{mode}_dec{dec}_{s}step"
 
     # ------------------------------------------------------------------
@@ -613,11 +615,11 @@ def _build_indicator_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "params_physical": {**pp, **common},
         }
     elif indicator in ("green_default", "green_fixed"):
-        # Green usa run_green_std con interfaz unificada:
-        # f_cycle + N_cycles_per_seg + step_cycles → num_T + dt
-        func = "Default" if indicator == "green_default" else "FixedWindow"
+        # Green usa run_green_std con interfaz unificada (param_mode by_revolution/by_modal)
+        func = "Default" if indicator == "green_default" else "Lyapunov"
         return {
             "func":            func,
+            "param_mode":      mode,
             "params_physical": {**pp, **common},
         }
     else:

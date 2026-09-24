@@ -333,13 +333,13 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   False,
         "name":      None,
         "indicator": "green_default",
+        "mode":      "by_revolution",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":               _F_MODAL,
-            "f_cycle":               _F_REV,
-            "N_cycles_per_seg":      4.0,
-            "step_cycles":           1.0,
+            "T_rev":                 _T_REV,
+            "N_rev_window":          4.0,
+            "step_rev":              1.0,
             "data_filtrated":        True,
             "hilbert":               False,
             "while_loop_extend":     False,
@@ -355,13 +355,13 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   False,
         "name":      None,
         "indicator": "green_default",
+        "mode":      "by_modal",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":               _F_MODAL,
-            "f_cycle":               _F_MODAL,
-            "N_cycles_per_seg":      4,
-            "step_cycles":           1.0,
+            "T_modal":               _T_MODAL,
+            "N_modal_window":        4,
+            "step_modal":            1.0,
             "data_filtrated":        True,
             "hilbert":               False,
             "while_loop_extend":     False,
@@ -377,13 +377,13 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   True,
         "name":      None,
         "indicator": "green_fixed",
+        "mode":      "by_revolution",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":          _F_MODAL,
-            "f_cycle":          _F_REV,
-            "N_cycles_per_seg": 7,
-            "step_cycles":      1,
+            "T_rev":            _T_REV,
+            "N_rev_window":     7,
+            "step_rev":         1,
             "data_filtrated":   True,
             "lambda_ewma":      None,
             "accumulate":       False,
@@ -401,13 +401,13 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "enabled":   False,
         "name":      None,
         "indicator": "green_fixed",
+        "mode":      "by_modal",
         "signal":    "Axial_disp",
         "common":    _COMMON_GREEN,
         "params_physical": {
-            "f_modal":          _F_MODAL,
-            "f_cycle":          _F_MODAL,
-            "N_cycles_per_seg": 4,
-            "step_cycles":      1.0,
+            "T_modal":          _T_MODAL,
+            "N_modal_window":   4,
+            "step_modal":       1.0,
             "data_filtrated":   True,
             "lambda_ewma":      None,
             "accumulate":       False,
@@ -458,8 +458,12 @@ def _auto_name(cfg: Dict[str, Any]) -> str:
     mode = _MODE_SHORT.get(cfg.get("mode", ""), cfg.get("mode", ""))
 
     if ind in ("green_default", "green_fixed"):
-        dec = int(pp.get("N_cycles_per_seg", 0))
-        s   = int(pp.get("step_cycles", 1))
+        if cfg.get("mode") == "by_revolution":
+            dec = int(pp.get("N_rev_window", 0))
+            s   = int(pp.get("step_rev", 1))
+        else:
+            dec = int(pp.get("N_modal_window", 0))
+            s   = int(pp.get("step_modal", 1))
         # green no siempre tiene mode key → omitir si vacío
         mode_str = f"_{mode}" if mode else ""
         return f"{ind}{mode_str}_dec{dec}_{s}step"
@@ -630,9 +634,10 @@ def _build_indicator_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "params_physical": {**pp, **common},
         }
     elif indicator in ("green_default", "green_fixed"):
-        func = "Default" if indicator == "green_default" else "FixedWindow"
+        func = "Default" if indicator == "green_default" else "Lyapunov"
         return {
             "func":            func,
+            "param_mode":      mode,
             "params_physical": {**pp, **common},
         }
     else:
