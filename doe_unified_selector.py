@@ -53,6 +53,8 @@ from doe_plotter import (
     SIGNAL_YLABELS,
     color_azul,
     color_orange,
+    color_verde,
+    color_red,
     plot_convergence,
     plot_convergence_error_ref,
     plot_convergence_error_consec,
@@ -100,6 +102,10 @@ TYPE_DOE_NOISE     = "doe_noise"
 TYPE_DOE_INDICATOR = "doe_indicator"
 TYPE_NOISE_IND     = "doe_noise_ind"
 TYPE_MODEL_SNR     = "doe_model_snr"
+# reference_dataset.py (Fase 1/2A): stable/unstable, no "case_*" -- formatos aparte,
+# con un visualizador propio (ReferenceViewerApp), no encajan en el resto de esta app.
+TYPE_REFERENCE_DATASET  = "reference_dataset"
+TYPE_REFERENCE_COMBINED = "reference_combined"
 
 _TYPE_LABELS = {
     TYPE_DOE_RESULTS  : "DOE Results  (signals)",
@@ -107,6 +113,8 @@ _TYPE_LABELS = {
     TYPE_DOE_INDICATOR: "DOE Indicator Results",
     TYPE_NOISE_IND    : "DOE Noise Indicators",
     TYPE_MODEL_SNR    : "DOE Model SNR",
+    TYPE_REFERENCE_DATASET : "Reference Dataset  (tramos por caso)",
+    TYPE_REFERENCE_COMBINED: "Reference Combined  (señal por label+canal)",
 }
 
 DECIMATE = 1   # decimación para plots de señales en panel central
@@ -122,6 +130,13 @@ def detect_h5_type(h5_path: str) -> str:
         groups = list(f.keys())
         if not groups:
             return TYPE_DOE_RESULTS
+
+        # reference_dataset.py: to_hdf5() -> stable/unstable anidado (case/pieza);
+        # save_combined() -> stable__<canal>/unstable__<canal> plano, con t/y directo.
+        if groups and all(g in ("stable", "unstable") for g in groups):
+            return TYPE_REFERENCE_DATASET
+        if groups and all(g.startswith("stable__") or g.startswith("unstable__") for g in groups):
+            return TYPE_REFERENCE_COMBINED
 
         has_case_groups = any(g.startswith("case_") for g in groups)
         has_snr_groups  = any(g.startswith("snr_") or g == "control" for g in groups)
@@ -2384,6 +2399,11 @@ class DoeSelectorUnifiedApp:
         )
         if not path:
             return
+
+        if detect_h5_type(path) in (TYPE_REFERENCE_DATASET, TYPE_REFERENCE_COMBINED):
+            _launch_app_for(self.root, path)
+            return
+
         try:
             self._load_file(path)
         except Exception as exc:
@@ -2402,6 +2422,317 @@ class DoeSelectorUnifiedApp:
         self._sort_rev = False
         self._iid_to_case.clear()
         self._build_ui()
+
+
+# ==============================================================================
+# REFERENCE DATASET / COMBINED — loaders livianos (solo attrs, t/y bajo demanda)
+# ==============================================================================
+
+def _index_reference_dataset(h5_path: str) -> List[Dict[str, Any]]:
+    """Lee attrs de cada tramo de un reference_dataset.h5 (to_hdf5 anidado) -- sin t/y."""
+    rows: List[Dict[str, Any]] = []
+    with h5py.File(h5_path, "r") as f:
+        for label in ("stable", "unstable"):
+            if label not in f:
+                continue
+            for case_name in f[label].keys():
+                case_grp = f[label][case_name]
+                for piece_name in case_grp.keys():
+                    attrs = dict(case_grp[piece_name].attrs)
+                    channel = attrs.get("channel") or piece_name.rsplit("__", 1)[0]
+                    idx_str = piece_name.rsplit("__", 1)[-1]
+                    kappa = attrs.get("kappa")
+                    rows.append({
+                        "label": label, "case": case_name, "channel": str(channel),
+                        "idx": int(idx_str) if idx_str.isdigit() else 0,
+                        "piece_name": piece_name,
+                        "t0": float(attrs.get("t0", 0.0)), "t1": float(attrs.get("t1", 0.0)),
+                        "kappa": float(kappa) if kappa is not None else None,
+                    })
+    return rows
+
+
+def _load_piece_ty(h5_path: str, label: str, case: str, piece_name: str) -> Tuple[np.ndarray, np.ndarray]:
+    with h5py.File(h5_path, "r") as f:
+        g = f[label][case][piece_name]
+        return g["t"][()], g["y"][()]
+
+
+def _index_reference_combined(h5_path: str) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """(label, canal) -> {group, n_pieces} de un reference_combined.h5 (save_combined) -- sin t/y."""
+    idx: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    with h5py.File(h5_path, "r") as f:
+        for grp_name in f.keys():
+            attrs = dict(f[grp_name].attrs)
+            label, channel = attrs.get("label"), attrs.get("channel")
+            if label is None or channel is None:
+                continue
+            idx[(label, str(channel))] = {"group": grp_name, "n_pieces": int(attrs.get("n_pieces", 0))}
+    return idx
+
+
+def _load_combined_group(h5_path: str, grp_name: str) -> Dict[str, Any]:
+    with h5py.File(h5_path, "r") as f:
+        g = f[grp_name]
+        return {
+            "t": g["t"][()], "y": g["y"][()], "fs": float(g.attrs.get("fs", 1.0)),
+            "piece_lengths": [int(n) for n in g["piece_lengths"][()]] if "piece_lengths" in g else [],
+            "source_ids": (
+                [s.decode() if isinstance(s, bytes) else str(s) for s in g["source_ids"][()]]
+                if "source_ids" in g else []
+            ),
+        }
+
+
+def _decimate_for_plot(t: np.ndarray, y: np.ndarray, max_points: int = 20_000) -> Tuple[np.ndarray, np.ndarray]:
+    n = len(t)
+    if n <= max_points:
+        return t, y
+    stride = max(1, n // max_points)
+    return t[::stride], y[::stride]
+
+
+class ReferenceViewerApp:
+    """Visualizador de reference_dataset.py -- Fase 1 (tramos) y Fase 2A (combinado).
+
+    Ventana separada de DoeSelectorUnifiedApp a propósito: el esquema de datos
+    (label/case/tramo o label/canal) no tiene nada que ver con "casos DOE" y
+    reusar el Treeview/topbar de esa clase confundiría más de lo que ayudaría.
+    Mismo lanzador/auto-detección/FileDialog que el resto de la app.
+    """
+
+    def __init__(self, root: tk.Tk, h5_path: str, h5_type: str) -> None:
+        self.root = root
+        self.h5_path = h5_path
+        self.h5_type = h5_type
+        self.root.title(f"{_TYPE_LABELS.get(h5_type, h5_type)}  —  {os.path.basename(h5_path)}")
+        self.root.minsize(1000, 600)
+        self.root.state("zoomed")
+
+        if h5_type == TYPE_REFERENCE_DATASET:
+            self._build_tramos_ui()
+        else:
+            self._build_combinado_ui()
+
+    # ── ABRIR ARCHIVO (comun a las dos vistas) ────────────────────────────────
+    def _open_file(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self.root, title="Open DOE HDF5 file",
+            filetypes=[("HDF5 files", "*.h5 *.hdf5"), ("All files", "*.*")],
+            initialdir=os.path.dirname(self.h5_path),
+        )
+        if not path:
+            return
+        try:
+            _launch_app_for(self.root, path)
+        except Exception as exc:
+            messagebox.showerror("Error loading", str(exc), parent=self.root)
+
+    # ══════════════════════════════ PESTAÑA "TRAMOS" ═══════════════════════════════
+    def _build_tramos_ui(self) -> None:
+        self._index = _index_reference_dataset(self.h5_path)
+
+        bar = ttk.Frame(self.root, padding=(4, 2))
+        bar.pack(side=tk.TOP, fill=tk.X)
+        ttk.Button(bar, text="📂  Open another .h5", command=self._open_file).pack(side=tk.LEFT, padx=4)
+        ttk.Label(
+            bar, text=f"{len(self._index)} tramos  |  {os.path.basename(self.h5_path)}",
+            foreground="#444444", font=("Arial", 9),
+        ).pack(side=tk.LEFT, padx=8)
+
+        ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
+        labels_present = sorted({r["label"] for r in self._index})
+        channels_present = sorted({r["channel"] for r in self._index})
+        ttk.Label(bar, text="Label:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._label_filter_var = tk.StringVar(value="(todos)")
+        _lc = ttk.Combobox(bar, textvariable=self._label_filter_var, state="readonly", width=10,
+                            values=["(todos)"] + labels_present)
+        _lc.pack(side=tk.LEFT, padx=(2, 8))
+        _lc.bind("<<ComboboxSelected>>", self._refresh_tree)
+        ttk.Label(bar, text="Canal:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._channel_filter_var = tk.StringVar(value="(todos)")
+        _cc = ttk.Combobox(bar, textvariable=self._channel_filter_var, state="readonly", width=14,
+                            values=["(todos)"] + channels_present)
+        _cc.pack(side=tk.LEFT, padx=2)
+        _cc.bind("<<ComboboxSelected>>", self._refresh_tree)
+
+        body = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
+        body.pack(fill=tk.BOTH, expand=True)
+        left = ttk.Frame(body)
+        body.add(left, weight=1)
+        right = ttk.Frame(body)
+        body.add(right, weight=2)
+
+        cols = ("label", "case", "canal", "idx", "t0", "t1", "dur", "kappa")
+        widths = (60, 90, 100, 40, 65, 65, 65, 60)
+        self._tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="extended")
+        for c, w in zip(cols, widths):
+            self._tree.heading(c, text=c)
+            self._tree.column(c, width=w, anchor=tk.CENTER)
+        self._tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        vsb = ttk.Scrollbar(left, orient=tk.VERTICAL, command=self._tree.yview)
+        self._tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        self._tree.bind("<<TreeviewSelect>>", lambda _e: self._plot_selected_tramos())
+
+        self._fig_tramos = Figure(figsize=(7, 5), dpi=100)
+        self._ax_tramos = self._fig_tramos.add_subplot(111)
+        self._canvas_tramos = FigureCanvasTkAgg(self._fig_tramos, master=right)
+        self._canvas_tramos.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        NavigationToolbar2Tk(self._canvas_tramos, right).update()
+
+        self._refresh_tree()
+
+    def _refresh_tree(self, *_args) -> None:
+        self._tree.delete(*self._tree.get_children())
+        lab = self._label_filter_var.get()
+        ch = self._channel_filter_var.get()
+        for i, r in enumerate(self._index):
+            if lab != "(todos)" and r["label"] != lab:
+                continue
+            if ch != "(todos)" and r["channel"] != ch:
+                continue
+            kappa_txt = f"{r['kappa']:.3f}" if r["kappa"] is not None else ""
+            self._tree.insert("", tk.END, iid=str(i), values=(
+                r["label"], r["case"], r["channel"], r["idx"],
+                f"{r['t0']:.3f}", f"{r['t1']:.3f}", f"{r['t1'] - r['t0']:.3f}", kappa_txt,
+            ))
+
+    def _plot_selected_tramos(self) -> None:
+        sel = self._tree.selection()
+        self._ax_tramos.clear()
+        if not sel:
+            self._canvas_tramos.draw_idle()
+            return
+        last_channel = None
+        for iid in sel:
+            r = self._index[int(iid)]
+            t, y = _load_piece_ty(self.h5_path, r["label"], r["case"], r["piece_name"])
+            t_dec, y_dec = _decimate_for_plot(t, y)
+            color = color_verde if r["label"] == "stable" else color_red
+            self._ax_tramos.plot(
+                t_dec, y_dec, color=color, lw=0.9, alpha=0.85,
+                label=f"{r['case']}/{r['channel']}__{r['idx']:03d}",
+            )
+            last_channel = r["channel"]
+        self._ax_tramos.set_xlabel("t [s]")
+        self._ax_tramos.set_ylabel(last_channel or "")
+        if len(sel) <= 8:
+            self._ax_tramos.legend(fontsize=7, loc="best")
+        self._fig_tramos.tight_layout()
+        self._canvas_tramos.draw_idle()
+
+    # ══════════════════════════════ PESTAÑA "COMBINADO" ════════════════════════════
+    def _build_combinado_ui(self) -> None:
+        self._combined_index = _index_reference_combined(self.h5_path)
+        self._combined_data: Dict[str, Dict[str, Any]] = {}
+        channels = sorted({ch for (_, ch) in self._combined_index})
+
+        bar = ttk.Frame(self.root, padding=(4, 2))
+        bar.pack(side=tk.TOP, fill=tk.X)
+        ttk.Button(bar, text="📂  Open another .h5", command=self._open_file).pack(side=tk.LEFT, padx=4)
+        ttk.Label(
+            bar, text=f"{len(channels)} canales  |  {os.path.basename(self.h5_path)}",
+            foreground="#444444", font=("Arial", 9),
+        ).pack(side=tk.LEFT, padx=8)
+
+        ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
+        ttk.Label(bar, text="Canal:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self._channel_var = tk.StringVar(value=channels[0] if channels else "")
+        _chc = ttk.Combobox(bar, textvariable=self._channel_var, state="readonly", width=16, values=channels)
+        _chc.pack(side=tk.LEFT, padx=(2, 8))
+        _chc.bind("<<ComboboxSelected>>", self._load_and_plot_channel)
+
+        self._color_by_piece_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            bar, text="🎨 Colorear tramos", variable=self._color_by_piece_var,
+            command=self._replot_combinado,
+        ).pack(side=tk.LEFT, padx=4)
+
+        body = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
+        body.pack(fill=tk.BOTH, expand=True)
+        plot_frame = ttk.Frame(body)
+        body.add(plot_frame, weight=3)
+        meta_frame = ttk.Frame(body)
+        body.add(meta_frame, weight=1)
+
+        self._fig_comb = Figure(figsize=(9, 6), dpi=100)
+        self._ax_stable = self._fig_comb.add_subplot(211)
+        self._ax_unstable = self._fig_comb.add_subplot(212)
+        self._canvas_comb = FigureCanvasTkAgg(self._fig_comb, master=plot_frame)
+        self._canvas_comb.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        NavigationToolbar2Tk(self._canvas_comb, plot_frame).update()
+
+        ttk.Label(meta_frame, text="Metadata", font=("Arial", 9, "bold")).pack(anchor=tk.W, padx=4, pady=(4, 0))
+        self._meta_text = tk.Text(meta_frame, wrap=tk.WORD, width=38, font=("Consolas", 8))
+        self._meta_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        if channels:
+            self._load_and_plot_channel()
+
+    def _load_and_plot_channel(self, *_args) -> None:
+        channel = self._channel_var.get()
+        self._combined_data = {}
+        for label in ("stable", "unstable"):
+            entry = self._combined_index.get((label, channel))
+            if entry is not None:
+                self._combined_data[label] = _load_combined_group(self.h5_path, entry["group"])
+        self._replot_combinado()
+
+    def _replot_combinado(self) -> None:
+        for ax, label, color in (
+            (self._ax_stable, "stable", color_verde),
+            (self._ax_unstable, "unstable", color_red),
+        ):
+            ax.clear()
+            data = self._combined_data.get(label)
+            ax.set_title(label, fontsize=9)
+            if not data or len(data["y"]) == 0:
+                continue
+            t, y, fs = data["t"], data["y"], data["fs"]
+            t_dec, y_dec = _decimate_for_plot(t, y)
+            ax.plot(t_dec, y_dec, color=color, lw=0.7)
+            if self._color_by_piece_var.get() and data["piece_lengths"]:
+                bounds = np.cumsum([0] + data["piece_lengths"]) / fs
+                for i in range(len(data["piece_lengths"])):
+                    if i % 2 == 0:
+                        ax.axvspan(bounds[i], bounds[i + 1], color="0.5", alpha=0.15, zorder=0)
+            ax.set_xlabel("t sintético [s]  (concatenación de tramos, no tiempo real de ensayo)", fontsize=7)
+        self._fig_comb.tight_layout()
+        self._canvas_comb.draw_idle()
+        self._update_meta_text()
+
+    def _update_meta_text(self) -> None:
+        self._meta_text.delete("1.0", tk.END)
+        for label in ("stable", "unstable"):
+            data = self._combined_data.get(label)
+            self._meta_text.insert(tk.END, f"== {label} ==\n")
+            if not data:
+                self._meta_text.insert(tk.END, "  (sin datos para este canal)\n\n")
+                continue
+            n_pieces = len(data["source_ids"]) or len(data["piece_lengths"])
+            dur = len(data["y"]) / data["fs"] if data["fs"] else 0.0
+            self._meta_text.insert(tk.END, f"n_pieces: {n_pieces}\n")
+            self._meta_text.insert(tk.END, f"duración total: {dur:.2f} s\n")
+            if data["source_ids"]:
+                self._meta_text.insert(tk.END, "piezas:\n")
+                for sid in data["source_ids"]:
+                    self._meta_text.insert(tk.END, f"  - {sid}\n")
+            self._meta_text.insert(tk.END, "\n")
+
+
+def _launch_app_for(root: tk.Tk, h5_path: str) -> None:
+    """Destruye los widgets de `root` y construye la app apropiada para `h5_path`."""
+    h5_type = detect_h5_type(h5_path)
+    for w in root.winfo_children():
+        try:
+            w.destroy()
+        except Exception:
+            pass
+    if h5_type in (TYPE_REFERENCE_DATASET, TYPE_REFERENCE_COMBINED):
+        ReferenceViewerApp(root, h5_path, h5_type)
+    else:
+        DoeSelectorUnifiedApp(root, h5_path)
 
 
 # ==============================================================================
@@ -2451,7 +2782,7 @@ def main() -> None:
 
     root = tk.Tk()
     root.update()  # pinta la ventana ya, antes de la carga pesada del .h5
-    DoeSelectorUnifiedApp(root, h5_path)
+    _launch_app_for(root, h5_path)
     root.mainloop()
 
 
