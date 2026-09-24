@@ -2492,6 +2492,18 @@ def _decimate_for_plot(t: np.ndarray, y: np.ndarray, max_points: int = 20_000) -
     return t[::stride], y[::stride]
 
 
+def _case_from_source_id(source_id: str) -> str:
+    """'case_007/Axial_vel#case_007/Axial_vel__000' -> 'case_007'."""
+    return source_id.split("#")[0].split("/")[0]
+
+
+def _case_color_map(cases: List[str]):
+    """Un color distinto por caso único (ciclo tab20), consistente en toda la sesión."""
+    cmap = cm.get_cmap("tab20")
+    unique = sorted(set(cases))
+    return {c: cmap(i % 20) for i, c in enumerate(unique)}
+
+
 class ReferenceViewerApp:
     """Visualizador de reference_dataset.py -- Fase 1 (tramos) y Fase 2A (combinado).
 
@@ -2563,11 +2575,13 @@ class ReferenceViewerApp:
         right = ttk.Frame(body)
         body.add(right, weight=2)
 
-        cols = ("label", "case", "canal", "idx", "t0", "t1", "dur", "kappa")
+        self._tree_cols = ("label", "case", "canal", "idx", "t0", "t1", "dur", "kappa")
         widths = (60, 90, 100, 40, 65, 65, 65, 60)
-        self._tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="extended")
-        for c, w in zip(cols, widths):
-            self._tree.heading(c, text=c)
+        self._tree_sort_col: Optional[str] = None
+        self._tree_sort_rev = False
+        self._tree = ttk.Treeview(left, columns=self._tree_cols, show="headings", selectmode="extended")
+        for c, w in zip(self._tree_cols, widths):
+            self._tree.heading(c, text=c, command=lambda cc=c: self._sort_tree_by(cc))
             self._tree.column(c, width=w, anchor=tk.CENTER)
         self._tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
         vsb = ttk.Scrollbar(left, orient=tk.VERTICAL, command=self._tree.yview)
@@ -2597,6 +2611,29 @@ class ReferenceViewerApp:
                 r["label"], r["case"], r["channel"], r["idx"],
                 f"{r['t0']:.3f}", f"{r['t1']:.3f}", f"{r['t1'] - r['t0']:.3f}", kappa_txt,
             ))
+        if self._tree_sort_col:
+            self._sort_tree_by(self._tree_sort_col, toggle=False)
+
+    def _sort_tree_by(self, col: str, toggle: bool = True) -> None:
+        """Ordena la tabla de tramos al clickear un encabezado (clic de nuevo -> invierte)."""
+        if toggle:
+            self._tree_sort_rev = (self._tree_sort_col == col) and not self._tree_sort_rev
+            self._tree_sort_col = col
+        rows = [(self._tree.set(iid, col), iid) for iid in self._tree.get_children()]
+
+        def _key(item):
+            try:
+                return (0, float(item[0]))
+            except (ValueError, TypeError):
+                return (1, str(item[0]))
+
+        rows.sort(key=_key, reverse=self._tree_sort_rev)
+        for idx, (_, iid) in enumerate(rows):
+            self._tree.move(iid, "", idx)
+        for c in self._tree_cols:
+            hdr = self._tree.heading(c)["text"].rstrip(" ▲▼")
+            arrow = (" ▼" if self._tree_sort_rev else " ▲") if c == self._tree_sort_col else ""
+            self._tree.heading(c, text=hdr + arrow, command=lambda cc=c: self._sort_tree_by(cc))
 
     def _plot_selected_tramos(self) -> None:
         sel = self._tree.selection()
@@ -2692,11 +2729,17 @@ class ReferenceViewerApp:
             t, y, fs = data["t"], data["y"], data["fs"]
             t_dec, y_dec = _decimate_for_plot(t, y)
             ax.plot(t_dec, y_dec, color=color, lw=0.7)
-            if self._color_by_piece_var.get() and data["piece_lengths"]:
+            if self._color_by_piece_var.get() and data["piece_lengths"] and data["source_ids"]:
                 bounds = np.cumsum([0] + data["piece_lengths"]) / fs
-                for i in range(len(data["piece_lengths"])):
-                    if i % 2 == 0:
-                        ax.axvspan(bounds[i], bounds[i + 1], color="0.5", alpha=0.15, zorder=0)
+                cases = [_case_from_source_id(sid) for sid in data["source_ids"]]
+                case_color = _case_color_map(cases)
+                for i, case in enumerate(cases):
+                    x0, x1 = bounds[i], bounds[i + 1]
+                    ax.axvspan(x0, x1, color=case_color[case], alpha=0.20, zorder=0)
+                    ax.text(
+                        (x0 + x1) / 2, 0.96, case, transform=ax.get_xaxis_transform(),
+                        rotation=90, fontsize=6, ha="center", va="top", color="black",
+                    )
             ax.set_xlabel("t sintético [s]  (concatenación de tramos, no tiempo real de ensayo)", fontsize=7)
         self._fig_comb.tight_layout()
         self._canvas_comb.draw_idle()
