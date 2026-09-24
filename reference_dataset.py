@@ -61,8 +61,8 @@ DEFAULT_KAPPA_THRESHOLD = 1.0
 DEFAULT_WARMUP          = 0.0
 DEFAULT_IN_H5           = None   # None -> "<carpeta de h5_path>/reference_dataset.h5" (entrada de "combine")
 DEFAULT_OUT_COMBINED    = None   # None -> "<carpeta de h5_path>/reference_combined.h5" (salida de "combine")
-DEFAULT_T_START         = None   # None -> sin corte al inicio. Recorte fijo de señal (ej. quitar entrada de herramienta)
-DEFAULT_T_END           = None   # None -> sin corte al final. Idem para la salida de herramienta
+DEFAULT_T_START         = 0.05   # None -> sin corte al inicio. Recorte fijo de señal (ej. quitar entrada de herramienta)
+DEFAULT_T_END           = 14.5   # None -> sin corte al final. Idem para la salida de herramienta
 
 
 # ==============================================================================
