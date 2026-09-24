@@ -375,6 +375,7 @@ def combine_by_label(dataset: ReferenceDataset) -> ReferenceDataset:
                 "channel": channel,
                 "n_pieces": len(pieces),
                 "source_ids": [p.id for p in pieces],
+                "piece_lengths": [len(p.y) for p in pieces],  # una entrada por source_ids, mismo orden
             },
         ))
 
@@ -393,6 +394,9 @@ def save_combined(dataset: ReferenceDataset, path: str) -> None:
             for k, v in sig.attrs.items():
                 if k == "source_ids":
                     grp.create_dataset("source_ids", data=np.array(v, dtype=object), dtype=h5py.string_dtype())
+                    continue
+                if k == "piece_lengths":
+                    grp.create_dataset("piece_lengths", data=np.array(v, dtype=np.int64))
                     continue
                 try:
                     grp.attrs[k] = v
@@ -415,6 +419,8 @@ def load_combined(path: str) -> ReferenceDataset:
                 attrs["source_ids"] = [
                     s.decode() if isinstance(s, bytes) else str(s) for s in grp["source_ids"][()]
                 ]
+            if "piece_lengths" in grp:
+                attrs["piece_lengths"] = [int(n) for n in grp["piece_lengths"][()]]
             label = attrs.get("label")
             intervals = [(0.0, float(t[-1]), label)] if label is not None else []
             signals.append(ReferenceSignal(id=sig_id, t=t, y=y, fs=fs, intervals=intervals, attrs=attrs))
@@ -622,6 +628,8 @@ def _self_test() -> None:
         assert csig.attrs["source_ids"] == [
             "case_a/Axial_vel#case_a/Axial_vel__000", "case_b/Axial_vel#case_b/Axial_vel__000",
         ]
+        assert csig.attrs["piece_lengths"] == [5, 3]
+        assert sum(csig.attrs["piece_lengths"]) == len(csig.y)
 
         combined_out = os.path.join(tmp, "combined.h5")
         save_combined(combined_ds, combined_out)
@@ -634,6 +642,7 @@ def _self_test() -> None:
         assert abs(rcsig.fs - csig.fs) < 1e-9
         assert rcsig.attrs["n_pieces"] == 2
         assert rcsig.attrs["source_ids"] == csig.attrs["source_ids"]
+        assert rcsig.attrs["piece_lengths"] == csig.attrs["piece_lengths"]
         assert rcsig.intervals == [(0.0, float(csig.t[-1]), "stable")]
 
         # 9. fs distinto en el mismo grupo -> ValueError explícito, sin resamplear
