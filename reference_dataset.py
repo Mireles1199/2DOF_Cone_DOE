@@ -345,5 +345,36 @@ def _self_test() -> None:
     print("self-test OK")
 
 
+def _main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("selftest", help="Corre el self-test (assert-based)")
+
+    p_template = sub.add_parser("template", help="Genera plantilla de etiquetas YAML")
+    p_template.add_argument("h5_path")
+    p_template.add_argument("out_yaml")
+
+    p_build = sub.add_parser("build", help="Construye y guarda un ReferenceDataset")
+    p_build.add_argument("h5_path")
+    p_build.add_argument("labels_yaml")
+    p_build.add_argument("out_h5")
+    p_build.add_argument("--channels", nargs="+", required=True)
+
+    args = parser.parse_args()
+
+    if args.cmd == "selftest":
+        _self_test()
+    elif args.cmd == "template":
+        make_label_template(args.h5_path, args.out_yaml)
+        print(f"Plantilla escrita en {args.out_yaml}")
+    elif args.cmd == "build":
+        ds = from_doe_h5(args.h5_path, args.labels_yaml, channels=args.channels)
+        ds.to_hdf5(args.out_h5)
+        print(f"{len(ds.signals)} señales -> {args.out_h5}")
+
+
 if __name__ == "__main__":
-    _self_test()
+    _main()

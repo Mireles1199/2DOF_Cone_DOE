@@ -1,0 +1,36 @@
+source: doe_results.h5
+cases:
+  case_000: []  # kappa=0.5   t=[0.00, 14.89] s
+  case_001: []  # kappa=0.6   t=[0.00, 14.89] s
+  case_002: []  # kappa=0.7   t=[0.00, 14.89] s
+  case_003: []  # kappa=0.8   t=[0.00, 14.89] s
+  case_004: []  # kappa=0.9   t=[0.00, 14.89] s
+  case_005: []  # kappa=1.0   t=[0.00, 14.89] s
+  case_006: []  # kappa=1.1   t=[0.00, 14.89] s
+  case_007: []  # kappa=1.2   t=[0.00, 14.89] s
+  case_008: []  # kappa=1.3   t=[0.00, 14.89] s
+  case_009: []  # kappa=1.4   t=[0.00, 14.89] s
+  case_010: []  # kappa=1.5   t=[0.00, 14.89] s
+  case_011: []  # kappa=1.6   t=[0.00, 14.89] s
+  case_012: []  # kappa=1.7   t=[0.00, 14.89] s
+  case_013: []  # kappa=1.8   t=[0.00, 14.89] s
+  case_014: []  # kappa=1.9   t=[0.00, 14.89] s
+  case_015: []  # kappa=2.0   t=[0.00, 14.89] s
+  case_016: []  # kappa=0.91   t=[0.00, 14.89] s
+  case_017: []  # kappa=0.92   t=[0.00, 14.89] s
+  case_018: []  # kappa=0.93   t=[0.00, 14.89] s
+  case_019: []  # kappa=0.94   t=[0.00, 14.89] s
+  case_020: []  # kappa=0.95   t=[0.00, 14.89] s
+  case_021: []  # kappa=0.96   t=[0.00, 14.89] s
+  case_022: []  # kappa=0.97   t=[0.00, 14.89] s
+  case_023: []  # kappa=0.98   t=[0.00, 14.89] s
+  case_024: []  # kappa=0.99   t=[0.00, 14.89] s
+  case_025: []  # kappa=1.01   t=[0.00, 14.89] s
+  case_026: []  # kappa=1.02   t=[0.00, 14.89] s
+  case_027: []  # kappa=1.03   t=[0.00, 14.89] s
+  case_028: []  # kappa=1.04   t=[0.00, 14.89] s
+  case_029: []  # kappa=1.05   t=[0.00, 14.89] s
+  case_030: []  # kappa=1.06   t=[0.00, 14.89] s
+  case_031: []  # kappa=1.07   t=[0.00, 14.89] s
+  case_032: []  # kappa=1.08   t=[0.00, 14.89] s
+  case_033: []  # kappa=1.09   t=[0.00, 14.89] s
