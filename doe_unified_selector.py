@@ -25,7 +25,7 @@ import argparse
 import os
 import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ── Backend ANTES de cualquier import de pyplot ──────────────────────────────────────────
 import matplotlib
