@@ -117,11 +117,47 @@ class ReferenceDataset:
 
 
 # ==============================================================================
-# PIEZA 1 — Etiquetado (manual)
+# PIEZA 1 — Etiquetado
 # ==============================================================================
 
-def make_label_template(h5_path: str, out_yaml: str) -> None:
-    """Genera `out_yaml` con todos los grupos de `h5_path` sin etiquetar.
+def _label_manual(grp_name: str, attrs: dict, t_range: Tuple[float, float]) -> List[Tuple[float, float, str]]:
+    """Estrategia por defecto: no etiqueta nada, el usuario completa a mano."""
+    return []
+
+
+def _label_by_kappa(
+    grp_name: str, attrs: dict, t_range: Tuple[float, float],
+    threshold: float = 1.0, warmup: float = 0.0,
+) -> List[Tuple[float, float, str]]:
+    """Etiqueta la señal entera (menos `warmup` al inicio) por umbral de kappa."""
+    if "kappa" not in attrs:
+        log.warning("Grupo '%s' sin attr 'kappa' — se deja sin etiquetar", grp_name)
+        return []
+    label = "stable" if attrs["kappa"] < threshold else "unstable"
+    return [(t_range[0] + warmup, t_range[1], label)]
+
+
+# Punto de extensión: sumar acá una estrategia nueva (ej. "por aplicación", a
+# definir más adelante) sin tocar make_label_template.
+LABEL_STRATEGIES = {
+    "manual": _label_manual,
+    "kappa":  _label_by_kappa,
+}
+
+
+def _format_intervals(intervals: List[Tuple[float, float, str]]) -> str:
+    if not intervals:
+        return "[]"
+    parts = ", ".join(f'[{t0}, {t1}, "{label}"]' for t0, t1, label in intervals)
+    return f"[{parts}]"
+
+
+def make_label_template(h5_path: str, out_yaml: str, strategy: str = "manual", **strategy_kwargs) -> None:
+    """Genera `out_yaml` con todos los grupos de `h5_path`.
+
+    `strategy` decide el primer pase de etiquetado ("manual" = todo vacío,
+    el default de siempre); el YAML resultante sigue siendo editable a mano
+    después, sea cual sea la estrategia usada para generarlo.
 
     Se niega a sobrescribir un YAML ya existente, para no perder etiquetas
     hechas a mano.
@@ -130,6 +166,7 @@ def make_label_template(h5_path: str, out_yaml: str) -> None:
         raise FileExistsError(
             f"{out_yaml} ya existe — no se sobrescribe (podrías perder etiquetas hechas a mano)."
         )
+    label_fn = LABEL_STRATEGIES[strategy]
 
     lines = [f"source: {os.path.basename(h5_path)}", "cases:"]
     with h5py.File(h5_path, "r") as f:
@@ -146,6 +183,8 @@ def make_label_template(h5_path: str, out_yaml: str) -> None:
                     t_range = (float(t[0]), float(t[-1]))
                     break
 
+            intervals = label_fn(grp_name, attrs, t_range, **strategy_kwargs) if t_range is not None else []
+
             comment_bits = []
             if kappa_bits:
                 comment_bits.append(", ".join(f"{k}={v}" for k, v in kappa_bits.items()))
@@ -153,7 +192,7 @@ def make_label_template(h5_path: str, out_yaml: str) -> None:
                 comment_bits.append(f"t=[{t_range[0]:.2f}, {t_range[1]:.2f}] s")
             comment = f"  # {'   '.join(comment_bits)}" if comment_bits else ""
 
-            lines.append(f"  {grp_name}: []{comment}")
+            lines.append(f"  {grp_name}: {_format_intervals(intervals)}{comment}")
 
     with open(out_yaml, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -279,6 +318,33 @@ def _self_test() -> None:
         except FileExistsError:
             pass
 
+        # 2b. estrategia "kappa": stable / unstable / sin kappa (-> [] + warning, no error)
+        kappa_h5 = os.path.join(tmp, "kappa_doe.h5")
+        kappa_yaml = os.path.join(tmp, "kappa_labels.yaml")
+        with h5py.File(kappa_h5, "w") as f:
+            grp = f.create_group("case_low")
+            grp.attrs["kappa"] = 0.5
+            sub = grp.create_group("Axial_vel")
+            sub.create_dataset("time", data=t)
+            sub.create_dataset("values", data=t)
+
+            grp = f.create_group("case_high")
+            grp.attrs["kappa"] = 1.5
+            sub = grp.create_group("Axial_vel")
+            sub.create_dataset("time", data=t)
+            sub.create_dataset("values", data=t)
+
+            grp = f.create_group("case_no_kappa")
+            sub = grp.create_group("Axial_vel")
+            sub.create_dataset("time", data=t)
+            sub.create_dataset("values", data=t)
+
+        make_label_template(kappa_h5, kappa_yaml, strategy="kappa", threshold=1.0, warmup=0.5)
+        kappa_cases = _parse_labels_file(kappa_yaml)
+        assert kappa_cases["case_low"] == [(0.5, 10.0, "stable")], kappa_cases["case_low"]
+        assert kappa_cases["case_high"] == [(0.5, 10.0, "unstable")], kappa_cases["case_high"]
+        assert kappa_cases["case_no_kappa"] == [], kappa_cases["case_no_kappa"]
+
         # 3. completar el YAML programáticamente
         labels = {
             "source": "doe_results.h5",
@@ -356,6 +422,9 @@ def _main() -> None:
     p_template = sub.add_parser("template", help="Genera plantilla de etiquetas YAML")
     p_template.add_argument("h5_path")
     p_template.add_argument("out_yaml")
+    p_template.add_argument("--strategy", choices=sorted(LABEL_STRATEGIES), default="manual")
+    p_template.add_argument("--kappa-threshold", type=float, default=1.0)
+    p_template.add_argument("--warmup", type=float, default=0.0)
 
     p_build = sub.add_parser("build", help="Construye y guarda un ReferenceDataset")
     p_build.add_argument("h5_path")
@@ -368,7 +437,8 @@ def _main() -> None:
     if args.cmd == "selftest":
         _self_test()
     elif args.cmd == "template":
-        make_label_template(args.h5_path, args.out_yaml)
+        kwargs = {"threshold": args.kappa_threshold, "warmup": args.warmup} if args.strategy == "kappa" else {}
+        make_label_template(args.h5_path, args.out_yaml, strategy=args.strategy, **kwargs)
         print(f"Plantilla escrita en {args.out_yaml}")
     elif args.cmd == "build":
         ds = from_doe_h5(args.h5_path, args.labels_yaml, channels=args.channels)
