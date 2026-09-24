@@ -11,4 +11,4 @@
 **/xlsx/
 *.pkl
 *.csv
-*.pyc
+**.pyc
