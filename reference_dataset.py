@@ -61,6 +61,8 @@ DEFAULT_KAPPA_THRESHOLD = 1.0
 DEFAULT_WARMUP          = 0.0
 DEFAULT_IN_H5           = None   # None -> "<carpeta de h5_path>/reference_dataset.h5" (entrada de "combine")
 DEFAULT_OUT_COMBINED    = None   # None -> "<carpeta de h5_path>/reference_combined.h5" (salida de "combine")
+DEFAULT_T_START         = None   # None -> sin corte al inicio. Recorte fijo de señal (ej. quitar entrada de herramienta)
+DEFAULT_T_END           = None   # None -> sin corte al final. Idem para la salida de herramienta
 
 
 # ==============================================================================
@@ -187,6 +189,27 @@ def _format_intervals(intervals: List[Tuple[float, float, str]]) -> str:
     return f"[{parts}]"
 
 
+def _masked_range(
+    time_ds, t_start: Optional[float], t_end: Optional[float]
+) -> Optional[Tuple[float, float]]:
+    """Rango [t0, t1] real tras aplicar t_start/t_end, con el mismo criterio de
+    máscara que usa `from_doe_h5` (t >= lo) & (t <= hi) -- así lo que la
+    plantilla muestra/etiqueta con la estrategia "kappa" siempre cae dentro
+    de lo que `build` va a aceptar, sin asumir que t_start/t_end caen justo
+    en un punto de la grilla de muestreo. None si no queda ninguna muestra.
+    """
+    if t_start is None and t_end is None:
+        return float(time_ds[0]), float(time_ds[-1])
+    t_full = time_ds[()]
+    lo = t_full[0] if t_start is None else t_start
+    hi = t_full[-1] if t_end is None else t_end
+    mask = (t_full >= lo) & (t_full <= hi)
+    if not mask.any():
+        return None
+    t_masked = t_full[mask]
+    return float(t_masked[0]), float(t_masked[-1])
+
+
 def _discover_channels(grp) -> List[str]:
     """Subgrupos de `grp` que son canales de señal (tienen dataset 'time' y 'values')."""
     return [
@@ -195,12 +218,21 @@ def _discover_channels(grp) -> List[str]:
     ]
 
 
-def make_label_template(h5_path: str, out_yaml: str, strategy: str = "manual", **strategy_kwargs) -> None:
+def make_label_template(
+    h5_path: str, out_yaml: str, strategy: str = "manual",
+    t_start: Optional[float] = None, t_end: Optional[float] = None,
+    **strategy_kwargs,
+) -> None:
     """Genera `out_yaml` con todos los grupos de `h5_path`.
 
     `strategy` decide el primer pase de etiquetado ("manual" = todo vacío,
     el default de siempre); el YAML resultante sigue siendo editable a mano
     después, sea cual sea la estrategia usada para generarlo.
+
+    `t_start`/`t_end`: recorte fijo de la señal antes de calcular el rango
+    (ej. para descartar entrada/salida de herramienta) — mismo recorte que
+    aplica `from_doe_h5`, así la plantilla ya refleja el rango realmente
+    disponible y no ofrece etiquetar algo que `build` después rechazaría.
 
     Se niega a sobrescribir un YAML ya existente, para no perder etiquetas
     hechas a mano.
@@ -221,8 +253,7 @@ def make_label_template(h5_path: str, out_yaml: str, strategy: str = "manual", *
             case_channels = _discover_channels(grp)
             t_range = None
             if case_channels:
-                t = grp[case_channels[0]]["time"]
-                t_range = (float(t[0]), float(t[-1]))
+                t_range = _masked_range(grp[case_channels[0]]["time"], t_start, t_end)
 
             intervals = label_fn(grp_name, attrs, t_range, **strategy_kwargs) if t_range is not None else []
 
@@ -275,12 +306,21 @@ def _parse_labels_file(labels_path: str) -> Dict[str, List[Tuple[float, float, s
 # PIEZA 3 — Adaptador de origen (el único que conoce doe_runner)
 # ==============================================================================
 
-def from_doe_h5(h5_path: str, labels_path: str, channels: Optional[List[str]] = None) -> ReferenceDataset:
+def from_doe_h5(
+    h5_path: str, labels_path: str, channels: Optional[List[str]] = None,
+    t_start: Optional[float] = None, t_end: Optional[float] = None,
+) -> ReferenceDataset:
     """Construye un ReferenceDataset a partir de un doe_results.h5 + su YAML de etiquetas.
 
     `channels`: lista explícita de canales a usar, o None (default) para
     incluir TODOS los canales disponibles de cada caso (autodetectados) —
     qué canal usar queda para la Fase 3, acá se guardan todos.
+
+    `t_start`/`t_end`: recorta la señal a ese rango ANTES de todo lo demás
+    (ej. para descartar entrada/salida de herramienta) — None = sin recorte
+    por ese lado. Los intervalos etiquetados tienen que caer dentro de lo
+    que quede tras el recorte, si no, ValueError (mismo chequeo que si
+    cayeran fuera del rango real de la señal).
 
     NO importa doe_indicators.py (acoplaría el dataset a los 4 indicadores) —
     la lectura de señal/attrs se replica acá, igual layout que `_load_case`.
@@ -306,6 +346,16 @@ def from_doe_h5(h5_path: str, labels_path: str, channels: Optional[List[str]] = 
 
                 t = grp[f"{ch}/time"][()]
                 y = grp[f"{ch}/values"][()]
+                if t_start is not None or t_end is not None:
+                    lo = t[0] if t_start is None else t_start
+                    hi = t[-1] if t_end is None else t_end
+                    crop_mask = (t >= lo) & (t <= hi)
+                    if not crop_mask.any():
+                        raise ValueError(
+                            f"t_start/t_end [{lo}, {hi}] no deja ninguna muestra en '{grp_name}/{ch}' "
+                            f"(rango real [{t[0]}, {t[-1]}])"
+                        )
+                    t, y = t[crop_mask], y[crop_mask]
                 t0_sig, t1_sig = float(t[0]), float(t[-1])
                 for a, b, _ in intervals:
                     if a < t0_sig or b > t1_sig:
@@ -554,6 +604,41 @@ def _self_test() -> None:
         ds_restricted = from_doe_h5(multi_h5, multi_yaml, channels=["Axial_vel"])
         assert {s.id for s in ds_restricted.signals} == {"case_a/Axial_vel"}
 
+        # 4c. t_start/t_end recorta la señal ANTES de todo lo demás (ej. entrada/salida de herramienta)
+        crop_h5 = os.path.join(tmp, "crop_doe.h5")
+        with h5py.File(crop_h5, "w") as f:
+            grp = f.create_group("case_000")
+            grp.attrs["kappa"] = 0.5
+            sub = grp.create_group("Axial_vel")
+            sub.create_dataset("time", data=t)
+            sub.create_dataset("values", data=t)
+
+        crop_yaml_ok = os.path.join(tmp, "crop_labels_ok.yaml")
+        with open(crop_yaml_ok, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"source": "x", "cases": {"case_000": [[2.0, 8.0, "stable"]]}}, f)
+        ds_cropped = from_doe_h5(crop_h5, crop_yaml_ok, channels=["Axial_vel"], t_start=1.0, t_end=9.0)
+        sig_c = ds_cropped.signals[0]
+        assert abs(sig_c.t[0] - 1.0) < 1e-9 and abs(sig_c.t[-1] - 9.0) < 1e-9, (sig_c.t[0], sig_c.t[-1])
+        assert sig_c.intervals == [(2.0, 8.0, "stable")]
+
+        crop_yaml_bad = os.path.join(tmp, "crop_labels_bad.yaml")
+        with open(crop_yaml_bad, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"source": "x", "cases": {"case_000": [[0.0, 10.0, "stable"]]}}, f)
+        try:
+            from_doe_h5(crop_h5, crop_yaml_bad, channels=["Axial_vel"], t_start=1.0, t_end=9.0)
+            raise AssertionError("debía fallar: intervalo se sale del recorte t_start/t_end")
+        except ValueError:
+            pass
+
+        # make_label_template con t_start/t_end: el rango mostrado/usado por "kappa" ya viene recortado,
+        # y coincide exactamente con lo que from_doe_h5 va a aceptar (sin asumir grilla alineada)
+        crop_template_yaml = os.path.join(tmp, "crop_template.yaml")
+        make_label_template(crop_h5, crop_template_yaml, strategy="kappa", threshold=1.0, t_start=1.0, t_end=9.0)
+        crop_cases = _parse_labels_file(crop_template_yaml)
+        assert crop_cases["case_000"] == [(1.0, 9.0, "stable")], crop_cases["case_000"]
+        # y ese mismo intervalo generado por la plantilla, build lo tiene que aceptar sin error
+        from_doe_h5(crop_h5, crop_template_yaml, channels=["Axial_vel"], t_start=1.0, t_end=9.0)
+
         # 7. to_hdf5 -> from_hdf5: segments() da los mismos tramos (mismo id base, mismo t/y)
         # (from_hdf5 ya NO reconstruye la señal completa, solo los tramos etiquetados recortados)
         out_h5 = os.path.join(tmp, "reference_dataset.h5")
@@ -726,6 +811,16 @@ def _main() -> None:
         "--warmup", type=float, default=DEFAULT_WARMUP,
         help=f"segundos a excluir al inicio de la señal en --strategy kappa (default: {DEFAULT_WARMUP})",
     )
+    p_template.add_argument(
+        "--t-start", type=float, default=DEFAULT_T_START,
+        help=f"recorta la señal desde este tiempo [s] antes de calcular el rango, ej. para descartar "
+             f"entrada de herramienta (default: DEFAULT_T_START = {DEFAULT_T_START!r}, None = sin recorte)",
+    )
+    p_template.add_argument(
+        "--t-end", type=float, default=DEFAULT_T_END,
+        help=f"recorta la señal hasta este tiempo [s], ej. para descartar salida de herramienta "
+             f"(default: DEFAULT_T_END = {DEFAULT_T_END!r}, None = sin recorte)",
+    )
 
     p_build = sub.add_parser(
         "build",
@@ -749,6 +844,16 @@ def _main() -> None:
         "--channels", nargs="+", default=DEFAULT_CHANNELS,
         help=f"canales a incluir, ej. Axial_vel Axial_disp (default: {DEFAULT_CHANNELS!r} "
              "-> autodetecta TODOS los canales del caso)",
+    )
+    p_build.add_argument(
+        "--t-start", type=float, default=DEFAULT_T_START,
+        help=f"recorta la señal desde este tiempo [s] antes de armar los tramos, ej. para descartar "
+             f"entrada de herramienta (default: DEFAULT_T_START = {DEFAULT_T_START!r}, None = sin recorte)",
+    )
+    p_build.add_argument(
+        "--t-end", type=float, default=DEFAULT_T_END,
+        help=f"recorta la señal hasta este tiempo [s], ej. para descartar salida de herramienta "
+             f"(default: DEFAULT_T_END = {DEFAULT_T_END!r}, None = sin recorte)",
     )
 
     p_combine = sub.add_parser(
@@ -796,12 +901,18 @@ def _main() -> None:
     if args.cmd == "template":
         out_yaml = args.out_yaml or os.path.join(h5_dir, "reference_labels.yaml")
         kwargs = {"threshold": args.kappa_threshold, "warmup": args.warmup} if args.strategy == "kappa" else {}
-        make_label_template(args.h5_path, out_yaml, strategy=args.strategy, **kwargs)
+        make_label_template(
+            args.h5_path, out_yaml, strategy=args.strategy,
+            t_start=args.t_start, t_end=args.t_end, **kwargs,
+        )
         print(f"Plantilla escrita en {out_yaml}")
     elif args.cmd == "build":
         labels_yaml = args.labels_yaml or os.path.join(h5_dir, "reference_labels.yaml")
         out_h5 = args.out_h5 or os.path.join(h5_dir, "reference_dataset.h5")
-        ds = from_doe_h5(args.h5_path, labels_yaml, channels=args.channels)
+        ds = from_doe_h5(
+            args.h5_path, labels_yaml, channels=args.channels,
+            t_start=args.t_start, t_end=args.t_end,
+        )
         ds.to_hdf5(out_h5)
         print(f"{len(ds.signals)} señales -> {out_h5}")
 
