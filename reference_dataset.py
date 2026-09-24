@@ -48,7 +48,7 @@ DEFAULT_H5_PATH         = r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Stora
 DEFAULT_LABELS_PATH     = None   # None -> "<carpeta de h5_path>/reference_labels.yaml"
 DEFAULT_OUT_H5          = None   # None -> "<carpeta de h5_path>/reference_dataset.h5"
 DEFAULT_CHANNELS        = None   # None -> autodetecta todos los canales de cada caso
-DEFAULT_STRATEGY        = "manual"
+DEFAULT_STRATEGY        = "kappa"
 DEFAULT_KAPPA_THRESHOLD = 1.0
 DEFAULT_WARMUP          = 0.0
 
