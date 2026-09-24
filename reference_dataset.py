@@ -59,6 +59,8 @@ DEFAULT_CHANNELS        = None   # None -> autodetecta todos los canales de cada
 DEFAULT_STRATEGY        = "kappa" #manual, kappa
 DEFAULT_KAPPA_THRESHOLD = 1.0
 DEFAULT_WARMUP          = 0.0
+DEFAULT_IN_H5           = None   # None -> "<carpeta de h5_path>/reference_dataset.h5" (entrada de "combine")
+DEFAULT_OUT_COMBINED    = None   # None -> "<carpeta de h5_path>/reference_combined.h5" (salida de "combine")
 
 
 # ==============================================================================
@@ -668,27 +670,92 @@ def _self_test() -> None:
 def _main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    parser = argparse.ArgumentParser(
+        prog="reference_dataset.py",
+        description=(
+            "Dataset externo de señales de referencia (stable/unstable) para los "
+            "indicadores de chatter. Todo argumento posicional es opcional: si no "
+            "se pasa, cae a la constante DEFAULT_* de la sección CONFIG arriba del "
+            "script (editable ahí); si se pasa por línea de comandos, éste gana."
+        ),
+        epilog=(
+            "Flujo típico:\n"
+            "  reference_dataset.py template   doe_results.h5 reference_labels.yaml\n"
+            "  (completar reference_labels.yaml a mano)\n"
+            "  reference_dataset.py build      doe_results.h5 reference_labels.yaml reference_dataset.h5\n"
+            "  reference_dataset.py combine    reference_dataset.h5 reference_combined.h5\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True, metavar="{selftest,template,build,combine}")
 
-    sub.add_parser("selftest", help="Corre el self-test (assert-based)")
+    sub.add_parser("selftest", help="Corre el self-test interno (assert-based), no toca archivos reales")
 
-    p_template = sub.add_parser("template", help="Genera plantilla de etiquetas YAML")
-    p_template.add_argument("h5_path", nargs="?", default=DEFAULT_H5_PATH)
-    p_template.add_argument("out_yaml", nargs="?", default=DEFAULT_LABELS_PATH)
-    p_template.add_argument("--strategy", choices=sorted(LABEL_STRATEGIES), default=DEFAULT_STRATEGY)
-    p_template.add_argument("--kappa-threshold", type=float, default=DEFAULT_KAPPA_THRESHOLD)
-    p_template.add_argument("--warmup", type=float, default=DEFAULT_WARMUP)
+    p_template = sub.add_parser(
+        "template",
+        help="Paso 1: genera el YAML de etiquetas (vacío o pre-llenado según --strategy) a partir de un doe_results.h5",
+    )
+    p_template.add_argument(
+        "h5_path", nargs="?", default=DEFAULT_H5_PATH,
+        help=f"doe_results.h5 de origen (default: DEFAULT_H5_PATH = {DEFAULT_H5_PATH!r})",
+    )
+    p_template.add_argument(
+        "out_yaml", nargs="?", default=DEFAULT_LABELS_PATH,
+        help="YAML de etiquetas a crear (default: DEFAULT_LABELS_PATH, o si es None, "
+             "'<carpeta de h5_path>/reference_labels.yaml'); nunca sobrescribe uno existente",
+    )
+    p_template.add_argument(
+        "--strategy", choices=sorted(LABEL_STRATEGIES), default=DEFAULT_STRATEGY,
+        help=f"cómo pre-llenar el YAML por caso (default: {DEFAULT_STRATEGY!r}); "
+             "'manual' deja todo vacío para completar a mano, 'kappa' etiqueta por umbral de kappa",
+    )
+    p_template.add_argument(
+        "--kappa-threshold", type=float, default=DEFAULT_KAPPA_THRESHOLD,
+        help=f"umbral de kappa para --strategy kappa (default: {DEFAULT_KAPPA_THRESHOLD})",
+    )
+    p_template.add_argument(
+        "--warmup", type=float, default=DEFAULT_WARMUP,
+        help=f"segundos a excluir al inicio de la señal en --strategy kappa (default: {DEFAULT_WARMUP})",
+    )
 
-    p_build = sub.add_parser("build", help="Construye y guarda un ReferenceDataset")
-    p_build.add_argument("h5_path", nargs="?", default=DEFAULT_H5_PATH)
-    p_build.add_argument("labels_yaml", nargs="?", default=DEFAULT_LABELS_PATH)
-    p_build.add_argument("out_h5", nargs="?", default=DEFAULT_OUT_H5)
-    p_build.add_argument("--channels", nargs="+", default=DEFAULT_CHANNELS)
+    p_build = sub.add_parser(
+        "build",
+        help="Paso 2: lee el YAML ya etiquetado a mano y arma+guarda el ReferenceDataset (tramos recortados)",
+    )
+    p_build.add_argument(
+        "h5_path", nargs="?", default=DEFAULT_H5_PATH,
+        help=f"doe_results.h5 de origen (default: DEFAULT_H5_PATH = {DEFAULT_H5_PATH!r})",
+    )
+    p_build.add_argument(
+        "labels_yaml", nargs="?", default=DEFAULT_LABELS_PATH,
+        help="YAML de etiquetas ya completado a mano (default: DEFAULT_LABELS_PATH, o si es "
+             "None, '<carpeta de h5_path>/reference_labels.yaml')",
+    )
+    p_build.add_argument(
+        "out_h5", nargs="?", default=DEFAULT_OUT_H5,
+        help="reference_dataset.h5 a escribir (default: DEFAULT_OUT_H5, o si es None, "
+             "'<carpeta de h5_path>/reference_dataset.h5')",
+    )
+    p_build.add_argument(
+        "--channels", nargs="+", default=DEFAULT_CHANNELS,
+        help=f"canales a incluir, ej. Axial_vel Axial_disp (default: {DEFAULT_CHANNELS!r} "
+             "-> autodetecta TODOS los canales del caso)",
+    )
 
-    p_combine = sub.add_parser("combine", help="Combina piezas del mismo (label, canal) en una señal continua")
-    p_combine.add_argument("in_h5")
-    p_combine.add_argument("out_h5")
+    p_combine = sub.add_parser(
+        "combine",
+        help="Paso 3 (Fase 2A): concatena todas las piezas del mismo (label, canal) en una señal continua",
+    )
+    p_combine.add_argument(
+        "in_h5", nargs="?", default=DEFAULT_IN_H5,
+        help="reference_dataset.h5 de entrada, salida de 'build' (default: DEFAULT_IN_H5, o si es "
+             "None, '<carpeta de DEFAULT_H5_PATH>/reference_dataset.h5')",
+    )
+    p_combine.add_argument(
+        "out_h5", nargs="?", default=DEFAULT_OUT_COMBINED,
+        help="reference_combined.h5 a escribir (default: DEFAULT_OUT_COMBINED, o si es None, "
+             "'<carpeta de DEFAULT_H5_PATH>/reference_combined.h5')",
+    )
 
     args = parser.parse_args()
 
@@ -697,9 +764,16 @@ def _main() -> None:
         return
 
     if args.cmd == "combine":
-        combined = combine_by_label(ReferenceDataset.from_hdf5(args.in_h5))
-        save_combined(combined, args.out_h5)
-        print(f"{len(combined.signals)} señales combinadas -> {args.out_h5}")
+        default_dir = os.path.dirname(os.path.abspath(DEFAULT_H5_PATH)) if DEFAULT_H5_PATH else None
+        in_h5 = args.in_h5 or (default_dir and os.path.join(default_dir, "reference_dataset.h5"))
+        out_h5 = args.out_h5 or (default_dir and os.path.join(default_dir, "reference_combined.h5"))
+        if not in_h5 or not out_h5:
+            parser.error(
+                "faltan in_h5/out_h5 — pasalos como argumento o fijá DEFAULT_H5_PATH arriba del script"
+            )
+        combined = combine_by_label(ReferenceDataset.from_hdf5(in_h5))
+        save_combined(combined, out_h5)
+        print(f"{len(combined.signals)} señales combinadas -> {out_h5}")
         return
 
     if args.h5_path is None:
