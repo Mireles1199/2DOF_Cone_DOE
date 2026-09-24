@@ -39,6 +39,18 @@ log = logging.getLogger(__name__)
 
 VALID_LABELS = {"stable", "unstable"}
 
+# ==============================================================================
+# CONFIG — editar acá los defaults del CLI; los flags de línea de comandos
+# los pisan si se pasan (mismo patrón que _T_GT/_CUT_START en doe_indicators.py)
+# ==============================================================================
+DEFAULT_H5_PATH         = None   # ej. r"D:\...\doe_results.h5"
+DEFAULT_LABELS_PATH     = "reference_labels.yaml"
+DEFAULT_OUT_H5          = "reference_dataset.h5"
+DEFAULT_CHANNELS        = ["Axial_vel"]
+DEFAULT_STRATEGY        = "manual"
+DEFAULT_KAPPA_THRESHOLD = 1.0
+DEFAULT_WARMUP          = 0.0
+
 
 # ==============================================================================
 # PIEZA 2 — Esquema canónico
@@ -420,23 +432,30 @@ def _main() -> None:
     sub.add_parser("selftest", help="Corre el self-test (assert-based)")
 
     p_template = sub.add_parser("template", help="Genera plantilla de etiquetas YAML")
-    p_template.add_argument("h5_path")
-    p_template.add_argument("out_yaml")
-    p_template.add_argument("--strategy", choices=sorted(LABEL_STRATEGIES), default="manual")
-    p_template.add_argument("--kappa-threshold", type=float, default=1.0)
-    p_template.add_argument("--warmup", type=float, default=0.0)
+    p_template.add_argument("h5_path", nargs="?", default=DEFAULT_H5_PATH)
+    p_template.add_argument("out_yaml", nargs="?", default=DEFAULT_LABELS_PATH)
+    p_template.add_argument("--strategy", choices=sorted(LABEL_STRATEGIES), default=DEFAULT_STRATEGY)
+    p_template.add_argument("--kappa-threshold", type=float, default=DEFAULT_KAPPA_THRESHOLD)
+    p_template.add_argument("--warmup", type=float, default=DEFAULT_WARMUP)
 
     p_build = sub.add_parser("build", help="Construye y guarda un ReferenceDataset")
-    p_build.add_argument("h5_path")
-    p_build.add_argument("labels_yaml")
-    p_build.add_argument("out_h5")
-    p_build.add_argument("--channels", nargs="+", required=True)
+    p_build.add_argument("h5_path", nargs="?", default=DEFAULT_H5_PATH)
+    p_build.add_argument("labels_yaml", nargs="?", default=DEFAULT_LABELS_PATH)
+    p_build.add_argument("out_h5", nargs="?", default=DEFAULT_OUT_H5)
+    p_build.add_argument("--channels", nargs="+", default=DEFAULT_CHANNELS)
 
     args = parser.parse_args()
 
     if args.cmd == "selftest":
         _self_test()
-    elif args.cmd == "template":
+        return
+
+    if args.cmd in ("template", "build") and args.h5_path is None:
+        parser.error(
+            "falta h5_path — pasalo como argumento o fijá DEFAULT_H5_PATH arriba del script"
+        )
+
+    if args.cmd == "template":
         kwargs = {"threshold": args.kappa_threshold, "warmup": args.warmup} if args.strategy == "kappa" else {}
         make_label_template(args.h5_path, args.out_yaml, strategy=args.strategy, **kwargs)
         print(f"Plantilla escrita en {args.out_yaml}")
