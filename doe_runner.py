@@ -73,13 +73,13 @@ SCRIPT_DIR = os.path.abspath(os.path.join(
 # ))
 
 # Step 3 - Senitivity dt
-# SCRIPT_DIR = os.path.abspath(os.path.join(
-#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-#     "Chatter-Criteria",
-#     "CAMP10_Chatter_detection_Methodes",
-#     "Convergency_Simulation",
-#     "3_Sensitivity_dt",
-# ))
+SCRIPT_DIR = os.path.abspath(os.path.join(
+    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+    "Chatter-Criteria",
+    "CAMP10_Chatter_detection_Methodes",
+    "Convergency_Simulation",
+    "3_Sensitivity_dt",
+))
 
 
 # Training - Tube

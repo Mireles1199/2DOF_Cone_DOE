@@ -232,7 +232,7 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "common":    _COMMON_MAXENT,
         "params_physical": {
             "T_rev":         _T_REV,
-            "N_rev_per_seg": 7,
+            "N_rev_window":  7,
             "step_rev":      1,
             "segmentation":  "raw",
             "use_sprt":      True,
@@ -252,7 +252,7 @@ INDICATOR_CONFIGS: List[Dict[str, Any]] = [
         "params_physical": {
             "T_rev":           _T_REV,
             "T_modal":         _T_MODAL,
-            "N_modal_per_seg": 3.0,
+            "N_modal_window":  3.0,
             "step_modal":      1.0,
             "segmentation":    "raw",
             "use_sprt":        True,
@@ -492,10 +492,10 @@ def _auto_name(cfg: Dict[str, Any]) -> str:
     # ------------------------------------------------------------------
     if ind == "maxent":
         if cfg.get("mode") == "by_revolution":
-            dec = int(pp.get("N_rev_per_seg", 0))
+            dec = int(pp.get("N_rev_window", 0))
             s   = int(pp.get("step_rev", 1))
         else:  # by_modal
-            dec = int(pp.get("N_modal_per_seg", 0))
+            dec = int(pp.get("N_modal_window", 0))
             s   = int(pp.get("step_modal", 1))
         return f"{ind}_{mode}_dec{dec}_{s}step"
 
