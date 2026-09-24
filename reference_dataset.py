@@ -43,7 +43,8 @@ VALID_LABELS = {"stable", "unstable"}
 # CONFIG — editar acá los defaults del CLI; los flags de línea de comandos
 # los pisan si se pasan (mismo patrón que _T_GT/_CUT_START en doe_indicators.py)
 # ==============================================================================
-DEFAULT_H5_PATH         = None   # ej. r"D:\...\doe_results.h5"
+DEFAULT_H5_PATH         = r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage\Chatter-Criteria\CAMP10_Chatter_detection_Methodes\Convergency_Simulation\4_DOE_Data_Training_Tube\DOE_Training_Tube_dxl_20e-5_RUN_10_0.5-2.0\doe_results.h5"
+
 DEFAULT_LABELS_PATH     = "reference_labels.yaml"
 DEFAULT_OUT_H5          = "reference_dataset.h5"
 DEFAULT_CHANNELS        = None   # None -> autodetecta todos los canales de cada caso
