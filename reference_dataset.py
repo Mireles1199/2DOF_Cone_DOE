@@ -53,7 +53,7 @@ DEFAULT_H5_PATH = (
 DEFAULT_LABELS_PATH     = None   # None -> "<carpeta de h5_path>/reference_labels.yaml"
 DEFAULT_OUT_H5          = None   # None -> "<carpeta de h5_path>/reference_dataset.h5"
 DEFAULT_CHANNELS        = None   # None -> autodetecta todos los canales de cada caso
-DEFAULT_STRATEGY        = "kappa"
+DEFAULT_STRATEGY        = "kappa" #manual, kappa
 DEFAULT_KAPPA_THRESHOLD = 1.0
 DEFAULT_WARMUP          = 0.0
 
@@ -88,49 +88,56 @@ class ReferenceDataset:
         return out
 
     def to_hdf5(self, path: str) -> None:
+        """Guarda cada TRAMO etiquetado ya recortado, agrupado por label (stable/unstable).
+
+        Pierde a propósito los tramos sin etiquetar de cada señal (esa cruda
+        sigue en el doe_results.h5 de origen) — este .h5 es el material de
+        entrenamiento ya recortado, no un espejo lossless de la señal completa.
+        """
         with h5py.File(path, "w") as f:
+            top = {"stable": f.create_group("stable"), "unstable": f.create_group("unstable")}
+            counters: Dict[Tuple[str, str], int] = {}  # (signal_id, label) -> próximo índice
             for sig in self.signals:
-                grp = f.create_group(sig.id.replace("/", "__"))
-                grp.create_dataset("t", data=sig.t)
-                grp.create_dataset("y", data=sig.y)
+                for t0, t1, label in sig.intervals:
+                    mask = (sig.t >= t0) & (sig.t <= t1)
+                    idx = counters.get((sig.id, label), 0)
+                    counters[(sig.id, label)] = idx + 1
+                    piece_name = f"{sig.id.replace('/', '__')}__{idx:03d}"
 
-                if sig.intervals:
-                    bounds = np.array([[t0, t1] for t0, t1, _ in sig.intervals], dtype=float)
-                    labels = np.array([lab for _, _, lab in sig.intervals], dtype=object)
-                else:
-                    bounds = np.zeros((0, 2), dtype=float)
-                    labels = np.array([], dtype=object)
-                grp.create_dataset("interval_bounds", data=bounds)
-                grp.create_dataset("interval_labels", data=labels, dtype=h5py.string_dtype())
-
-                grp.attrs["id"] = sig.id
-                grp.attrs["fs"] = sig.fs
-                for k, v in sig.attrs.items():
-                    try:
-                        grp.attrs[k] = v
-                    except Exception:
-                        grp.attrs[k] = str(v)
+                    g = top[label].create_group(piece_name)
+                    g.create_dataset("t", data=sig.t[mask])
+                    g.create_dataset("y", data=sig.y[mask])
+                    g.attrs["signal_id"] = sig.id
+                    g.attrs["t0"] = t0
+                    g.attrs["t1"] = t1
+                    g.attrs["fs"] = sig.fs
+                    for k, v in sig.attrs.items():
+                        try:
+                            g.attrs[k] = v
+                        except Exception:
+                            g.attrs[k] = str(v)
 
     @classmethod
     def from_hdf5(cls, path: str) -> "ReferenceDataset":
+        """Reconstruye un ReferenceSignal por tramo guardado (cada uno con su único intervalo)."""
         signals = []
         with h5py.File(path, "r") as f:
-            for grp_name in f.keys():
-                grp = f[grp_name]
-                t = grp["t"][()]
-                y = grp["y"][()]
-
-                bounds = grp["interval_bounds"][()] if "interval_bounds" in grp else np.zeros((0, 2))
-                raw_labels = grp["interval_labels"][()] if "interval_labels" in grp else np.array([])
-                intervals = [
-                    (float(b[0]), float(b[1]), (lab.decode() if isinstance(lab, bytes) else str(lab)))
-                    for b, lab in zip(bounds, raw_labels)
-                ]
-
-                attrs = dict(grp.attrs)
-                sig_id = attrs.pop("id", grp_name)
-                fs = attrs.pop("fs", 1.0 / float(t[1] - t[0]))
-                signals.append(ReferenceSignal(id=sig_id, t=t, y=y, fs=fs, intervals=intervals, attrs=attrs))
+            for label in ("stable", "unstable"):
+                if label not in f:
+                    continue
+                for piece_name in f[label].keys():
+                    g = f[label][piece_name]
+                    t = g["t"][()]
+                    y = g["y"][()]
+                    attrs = dict(g.attrs)
+                    sig_id = attrs.pop("signal_id", piece_name)
+                    t0 = attrs.pop("t0")
+                    t1 = attrs.pop("t1")
+                    fs = attrs.pop("fs", 1.0 / float(t[1] - t[0]))
+                    signals.append(ReferenceSignal(
+                        id=f"{sig_id}#{piece_name}", t=t, y=y, fs=fs,
+                        intervals=[(float(t0), float(t1), label)], attrs=attrs,
+                    ))
         return cls(signals=signals)
 
 
@@ -441,20 +448,53 @@ def _self_test() -> None:
         ds_restricted = from_doe_h5(multi_h5, multi_yaml, channels=["Axial_vel"])
         assert {s.id for s in ds_restricted.signals} == {"case_a/Axial_vel"}
 
-        # 7. to_hdf5 -> from_hdf5, round-trip idéntico
+        # 7. to_hdf5 -> from_hdf5: segments() da los mismos tramos (mismo id base, mismo t/y)
+        # (from_hdf5 ya NO reconstruye la señal completa, solo los tramos etiquetados recortados)
         out_h5 = os.path.join(tmp, "reference_dataset.h5")
         ds.to_hdf5(out_h5)
         ds2 = ReferenceDataset.from_hdf5(out_h5)
-        assert len(ds2.signals) == len(ds.signals)
-        by_id = {s.id: s for s in ds2.signals}
-        for sig in ds.signals:
-            sig2 = by_id[sig.id]
-            assert np.array_equal(sig.t, sig2.t)
-            assert np.array_equal(sig.y, sig2.y)
-            assert sig.intervals == sig2.intervals
-            assert abs(sig.fs - sig2.fs) < 1e-9
-            assert sig2.attrs.get("group") == sig.attrs.get("group")
-            assert abs(sig2.attrs.get("kappa") - sig.attrs.get("kappa")) < 1e-9
+
+        def _by_base_id(segs):
+            out = {}
+            for sid, st, sy in segs:
+                out.setdefault(sid.split("#")[0], []).append((st, sy))
+            return out
+
+        for label in ("stable", "unstable"):
+            orig = _by_base_id(ds.segments(label))
+            reloaded = _by_base_id(ds2.segments(label))
+            assert set(orig) == set(reloaded), (label, set(orig), set(reloaded))
+            for base_id, pieces in orig.items():
+                reloaded_pieces = reloaded[base_id]
+                assert len(pieces) == len(reloaded_pieces)
+                for (ot, oy), (rt, ry) in zip(
+                    sorted(pieces, key=lambda p: p[0][0]),
+                    sorted(reloaded_pieces, key=lambda p: p[0][0]),
+                ):
+                    assert np.array_equal(ot, rt)
+                    assert np.array_equal(oy, ry)
+
+        # 7b. dos intervalos del MISMO label en una señal -> índices __000/__001 no chocan
+        same_label_h5 = os.path.join(tmp, "same_label.h5")
+        same_label_yaml = os.path.join(tmp, "same_label_labels.yaml")
+        with h5py.File(same_label_h5, "w") as f:
+            grp = f.create_group("case_x")
+            sub = grp.create_group("Axial_vel")
+            sub.create_dataset("time", data=t)
+            sub.create_dataset("values", data=t)
+        with open(same_label_yaml, "w", encoding="utf-8") as f:
+            yaml.safe_dump(
+                {"source": "x", "cases": {"case_x": [[0.0, 3.0, "stable"], [3.0, 6.0, "unstable"], [6.0, 9.0, "stable"]]}},
+                f,
+            )
+        ds_sl = from_doe_h5(same_label_h5, same_label_yaml, channels=["Axial_vel"])
+        out_sl_h5 = os.path.join(tmp, "same_label_out.h5")
+        ds_sl.to_hdf5(out_sl_h5)
+        with h5py.File(out_sl_h5, "r") as f:
+            stable_pieces = sorted(f["stable"].keys())
+            unstable_pieces = sorted(f["unstable"].keys())
+        assert stable_pieces == ["case_x__Axial_vel__000", "case_x__Axial_vel__001"], stable_pieces
+        assert unstable_pieces == ["case_x__Axial_vel__000"], unstable_pieces
 
     print("self-test OK")
 
