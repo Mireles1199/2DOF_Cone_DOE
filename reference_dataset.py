@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-"""reference_dataset.py — Dataset externo de señales de referencia (Fase 1).
+"""reference_dataset.py — Dataset externo de señales de referencia (Fase 1 + 2A).
 
 Hoy los indicadores (MaxEnt, RMS-CV, SST, Green-Area) calculan su umbral de
 detección cortando un tramo de la MISMA señal que analizan. Este módulo arma
@@ -18,10 +18,13 @@ Secuencia de uso:
     3. from_doe_h5(doe_results.h5, reference_labels.yaml, channels) -> ReferenceDataset
     4. dataset.to_hdf5("reference_dataset.h5")                      -> portable
     5. (en cualquier lado) ReferenceDataset.from_hdf5(...)
+    6. combine_by_label(dataset) -> ReferenceDataset combinado (una señal
+       continua por label+canal) -> save_combined("reference_combined.h5")
+    7. (en cualquier lado) load_combined(...)
 
-Fuera de alcance de esta fase: etiquetado automático, combinar señales,
-features/GMM/GP, y cualquier cambio en doe_indicators.py / doe_noise_indicators.py
-o en los indicadores.
+Fuera de alcance por ahora: etiquetado automático, features/GMM/GP por pedazo
+(Fase 2, opción B), y cualquier cambio en doe_indicators.py /
+doe_noise_indicators.py o en los indicadores.
 """
 
 from __future__ import annotations
@@ -327,6 +330,96 @@ def from_doe_h5(h5_path: str, labels_path: str, channels: Optional[List[str]] = 
 
 
 # ==============================================================================
+# PIEZA 4 — Fase 2, opción A: combinar piezas del mismo (label, canal)
+# ==============================================================================
+
+def combine_by_label(dataset: ReferenceDataset) -> ReferenceDataset:
+    """Concatena todas las piezas del mismo (label, canal) en una señal continua.
+
+    Cada señal de `dataset.signals` se asume ya "una pieza de un solo label"
+    (el resultado de ReferenceDataset.from_hdf5 tras el rediseño stable/unstable).
+    fs se asume igual entre piezas del mismo grupo — si no lo es, ValueError
+    explícito, NO se resamplea.
+    """
+    groups: Dict[Tuple[str, Optional[str]], List[ReferenceSignal]] = {}
+    for sig in dataset.signals:
+        labels = {lab for _, _, lab in sig.intervals}
+        if len(labels) > 1:
+            raise ValueError(f"Señal '{sig.id}' mezcla labels distintos: {sorted(labels)}")
+        if not labels:
+            continue  # sin intervalos -> nada que combinar
+        label = next(iter(labels))
+        channel = sig.attrs.get("channel")
+        groups.setdefault((label, channel), []).append(sig)
+
+    combined_signals: List[ReferenceSignal] = []
+    for (label, channel), pieces in groups.items():
+        fs0 = pieces[0].fs
+        for p in pieces:
+            if abs(p.fs - fs0) > 1e-9:
+                raise ValueError(
+                    f"fs distinto en el grupo (label={label!r}, channel={channel!r}): "
+                    f"'{p.id}' tiene fs={p.fs}, esperado fs={fs0} (no se resamplea)"
+                )
+
+        y = np.concatenate([p.y for p in pieces])
+        t = np.arange(len(y)) / fs0
+        combined_signals.append(ReferenceSignal(
+            id=f"{label}/{channel}",
+            t=t, y=y, fs=fs0,
+            intervals=[(0.0, float(t[-1]), label)],
+            attrs={
+                "label": label,
+                "channel": channel,
+                "n_pieces": len(pieces),
+                "source_ids": [p.id for p in pieces],
+            },
+        ))
+
+    return ReferenceDataset(signals=combined_signals)
+
+
+def save_combined(dataset: ReferenceDataset, path: str) -> None:
+    """Persiste el resultado de `combine_by_label`: una señal continua por grupo."""
+    with h5py.File(path, "w") as f:
+        for sig in dataset.signals:
+            grp = f.create_group(sig.id.replace("/", "__"))
+            grp.create_dataset("t", data=sig.t)
+            grp.create_dataset("y", data=sig.y)
+            grp.attrs["id"] = sig.id
+            grp.attrs["fs"] = sig.fs
+            for k, v in sig.attrs.items():
+                if k == "source_ids":
+                    grp.create_dataset("source_ids", data=np.array(v, dtype=object), dtype=h5py.string_dtype())
+                    continue
+                try:
+                    grp.attrs[k] = v
+                except Exception:
+                    grp.attrs[k] = str(v)
+
+
+def load_combined(path: str) -> ReferenceDataset:
+    """Recarga lo que escribió `save_combined` como un ReferenceDataset normal."""
+    signals = []
+    with h5py.File(path, "r") as f:
+        for grp_name in f.keys():
+            grp = f[grp_name]
+            t = grp["t"][()]
+            y = grp["y"][()]
+            attrs = dict(grp.attrs)
+            sig_id = attrs.pop("id", grp_name)
+            fs = attrs.pop("fs", 1.0 / float(t[1] - t[0]))
+            if "source_ids" in grp:
+                attrs["source_ids"] = [
+                    s.decode() if isinstance(s, bytes) else str(s) for s in grp["source_ids"][()]
+                ]
+            label = attrs.get("label")
+            intervals = [(0.0, float(t[-1]), label)] if label is not None else []
+            signals.append(ReferenceSignal(id=sig_id, t=t, y=y, fs=fs, intervals=intervals, attrs=attrs))
+    return ReferenceDataset(signals=signals)
+
+
+# ==============================================================================
 # SELF-TEST
 # ==============================================================================
 
@@ -503,6 +596,72 @@ def _self_test() -> None:
         assert stable_pieces == ["Axial_vel__000", "Axial_vel__001"], stable_pieces
         assert unstable_pieces == ["Axial_vel__000"], unstable_pieces
 
+        # 8. combine_by_label: concatena piezas del mismo (label, canal), mismo fs, orden preservado
+        pieces_a = [
+            ReferenceSignal(
+                id="case_a/Axial_vel#case_a/Axial_vel__000",
+                t=np.arange(5) / 10.0, y=np.array([1.0, 2.0, 3.0, 4.0, 5.0]), fs=10.0,
+                intervals=[(0.0, 0.4, "stable")], attrs={"channel": "Axial_vel"},
+            ),
+            ReferenceSignal(
+                id="case_b/Axial_vel#case_b/Axial_vel__000",
+                t=np.arange(3) / 10.0, y=np.array([6.0, 7.0, 8.0]), fs=10.0,
+                intervals=[(0.0, 0.2, "stable")], attrs={"channel": "Axial_vel"},
+            ),
+        ]
+        combined_ds = combine_by_label(ReferenceDataset(signals=pieces_a))
+        assert len(combined_ds.signals) == 1
+        csig = combined_ds.signals[0]
+        assert csig.id == "stable/Axial_vel"
+        assert np.array_equal(csig.y, np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]))
+        assert len(csig.t) == len(csig.y)
+        assert abs(csig.t[1] - csig.t[0] - 1.0 / 10.0) < 1e-12
+        assert csig.attrs["n_pieces"] == 2
+        assert csig.attrs["source_ids"] == [
+            "case_a/Axial_vel#case_a/Axial_vel__000", "case_b/Axial_vel#case_b/Axial_vel__000",
+        ]
+
+        combined_out = os.path.join(tmp, "combined.h5")
+        save_combined(combined_ds, combined_out)
+        reloaded_combined = load_combined(combined_out)
+        assert len(reloaded_combined.signals) == 1
+        rcsig = reloaded_combined.signals[0]
+        assert rcsig.id == "stable/Axial_vel"
+        assert np.array_equal(rcsig.y, csig.y)
+        assert np.array_equal(rcsig.t, csig.t)
+        assert abs(rcsig.fs - csig.fs) < 1e-9
+        assert rcsig.attrs["n_pieces"] == 2
+        assert rcsig.attrs["source_ids"] == csig.attrs["source_ids"]
+        assert rcsig.intervals == [(0.0, float(csig.t[-1]), "stable")]
+
+        # 9. fs distinto en el mismo grupo -> ValueError explícito, sin resamplear
+        mismatched_fs = [
+            ReferenceSignal(
+                id="case_c/Axial_vel#p0", t=np.arange(4) / 10.0, y=np.arange(4.0), fs=10.0,
+                intervals=[(0.0, 0.3, "unstable")], attrs={"channel": "Axial_vel"},
+            ),
+            ReferenceSignal(
+                id="case_d/Axial_vel#p0", t=np.arange(4) / 20.0, y=np.arange(4.0), fs=20.0,
+                intervals=[(0.0, 0.15, "unstable")], attrs={"channel": "Axial_vel"},
+            ),
+        ]
+        try:
+            combine_by_label(ReferenceDataset(signals=mismatched_fs))
+            raise AssertionError("debía fallar por fs distinto")
+        except ValueError:
+            pass
+
+        # 9b. una señal que mezcla labels distintos -> ValueError (guard, no debería pasar con el flujo actual)
+        mixed_labels = [ReferenceSignal(
+            id="case_e/Axial_vel#p0", t=np.arange(2) / 10.0, y=np.zeros(2), fs=10.0,
+            intervals=[(0.0, 0.05, "stable"), (0.05, 0.1, "unstable")], attrs={"channel": "Axial_vel"},
+        )]
+        try:
+            combine_by_label(ReferenceDataset(signals=mixed_labels))
+            raise AssertionError("debía fallar por mezcla de labels")
+        except ValueError:
+            pass
+
     print("self-test OK")
 
 
@@ -527,13 +686,23 @@ def _main() -> None:
     p_build.add_argument("out_h5", nargs="?", default=DEFAULT_OUT_H5)
     p_build.add_argument("--channels", nargs="+", default=DEFAULT_CHANNELS)
 
+    p_combine = sub.add_parser("combine", help="Combina piezas del mismo (label, canal) en una señal continua")
+    p_combine.add_argument("in_h5")
+    p_combine.add_argument("out_h5")
+
     args = parser.parse_args()
 
     if args.cmd == "selftest":
         _self_test()
         return
 
-    if args.cmd in ("template", "build") and args.h5_path is None:
+    if args.cmd == "combine":
+        combined = combine_by_label(ReferenceDataset.from_hdf5(args.in_h5))
+        save_combined(combined, args.out_h5)
+        print(f"{len(combined.signals)} señales combinadas -> {args.out_h5}")
+        return
+
+    if args.h5_path is None:
         parser.error(
             "falta h5_path — pasalo como argumento o fijá DEFAULT_H5_PATH arriba del script"
         )
