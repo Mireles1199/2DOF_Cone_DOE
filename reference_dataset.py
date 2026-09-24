@@ -45,8 +45,8 @@ VALID_LABELS = {"stable", "unstable"}
 # ==============================================================================
 DEFAULT_H5_PATH         = r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage\Chatter-Criteria\CAMP10_Chatter_detection_Methodes\Convergency_Simulation\4_DOE_Data_Training_Tube\DOE_Training_Tube_dxl_20e-5_RUN_10_0.5-2.0\doe_results.h5"
 
-DEFAULT_LABELS_PATH     = "reference_labels.yaml"
-DEFAULT_OUT_H5          = "reference_dataset.h5"
+DEFAULT_LABELS_PATH     = None   # None -> "<carpeta de h5_path>/reference_labels.yaml"
+DEFAULT_OUT_H5          = None   # None -> "<carpeta de h5_path>/reference_dataset.h5"
 DEFAULT_CHANNELS        = None   # None -> autodetecta todos los canales de cada caso
 DEFAULT_STRATEGY        = "manual"
 DEFAULT_KAPPA_THRESHOLD = 1.0
@@ -486,14 +486,20 @@ def _main() -> None:
             "falta h5_path — pasalo como argumento o fijá DEFAULT_H5_PATH arriba del script"
         )
 
+    # out_yaml/labels_yaml/out_h5 no pasados por CLI -> misma carpeta que h5_path
+    h5_dir = os.path.dirname(os.path.abspath(args.h5_path))
+
     if args.cmd == "template":
+        out_yaml = args.out_yaml or os.path.join(h5_dir, "reference_labels.yaml")
         kwargs = {"threshold": args.kappa_threshold, "warmup": args.warmup} if args.strategy == "kappa" else {}
-        make_label_template(args.h5_path, args.out_yaml, strategy=args.strategy, **kwargs)
-        print(f"Plantilla escrita en {args.out_yaml}")
+        make_label_template(args.h5_path, out_yaml, strategy=args.strategy, **kwargs)
+        print(f"Plantilla escrita en {out_yaml}")
     elif args.cmd == "build":
-        ds = from_doe_h5(args.h5_path, args.labels_yaml, channels=args.channels)
-        ds.to_hdf5(args.out_h5)
-        print(f"{len(ds.signals)} señales -> {args.out_h5}")
+        labels_yaml = args.labels_yaml or os.path.join(h5_dir, "reference_labels.yaml")
+        out_h5 = args.out_h5 or os.path.join(h5_dir, "reference_dataset.h5")
+        ds = from_doe_h5(args.h5_path, labels_yaml, channels=args.channels)
+        ds.to_hdf5(out_h5)
+        print(f"{len(ds.signals)} señales -> {out_h5}")
 
 
 if __name__ == "__main__":
