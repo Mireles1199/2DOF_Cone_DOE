@@ -98,13 +98,16 @@ class ReferenceDataset:
             top = {"stable": f.create_group("stable"), "unstable": f.create_group("unstable")}
             counters: Dict[Tuple[str, str], int] = {}  # (signal_id, label) -> próximo índice
             for sig in self.signals:
+                case_name, _, rest = sig.id.partition("/")
+                piece_base = (rest or sig.id).replace("/", "__")
                 for t0, t1, label in sig.intervals:
                     mask = (sig.t >= t0) & (sig.t <= t1)
                     idx = counters.get((sig.id, label), 0)
                     counters[(sig.id, label)] = idx + 1
-                    piece_name = f"{sig.id.replace('/', '__')}__{idx:03d}"
+                    piece_name = f"{piece_base}__{idx:03d}"
 
-                    g = top[label].create_group(piece_name)
+                    case_grp = top[label].require_group(case_name)
+                    g = case_grp.create_group(piece_name)
                     g.create_dataset("t", data=sig.t[mask])
                     g.create_dataset("y", data=sig.y[mask])
                     g.attrs["signal_id"] = sig.id
@@ -125,19 +128,21 @@ class ReferenceDataset:
             for label in ("stable", "unstable"):
                 if label not in f:
                     continue
-                for piece_name in f[label].keys():
-                    g = f[label][piece_name]
-                    t = g["t"][()]
-                    y = g["y"][()]
-                    attrs = dict(g.attrs)
-                    sig_id = attrs.pop("signal_id", piece_name)
-                    t0 = attrs.pop("t0")
-                    t1 = attrs.pop("t1")
-                    fs = attrs.pop("fs", 1.0 / float(t[1] - t[0]))
-                    signals.append(ReferenceSignal(
-                        id=f"{sig_id}#{piece_name}", t=t, y=y, fs=fs,
-                        intervals=[(float(t0), float(t1), label)], attrs=attrs,
-                    ))
+                for case_name in f[label].keys():
+                    case_grp = f[label][case_name]
+                    for piece_name in case_grp.keys():
+                        g = case_grp[piece_name]
+                        t = g["t"][()]
+                        y = g["y"][()]
+                        attrs = dict(g.attrs)
+                        sig_id = attrs.pop("signal_id", f"{case_name}/{piece_name}")
+                        t0 = attrs.pop("t0")
+                        t1 = attrs.pop("t1")
+                        fs = attrs.pop("fs", 1.0 / float(t[1] - t[0]))
+                        signals.append(ReferenceSignal(
+                            id=f"{sig_id}#{case_name}/{piece_name}", t=t, y=y, fs=fs,
+                            intervals=[(float(t0), float(t1), label)], attrs=attrs,
+                        ))
         return cls(signals=signals)
 
 
@@ -491,10 +496,12 @@ def _self_test() -> None:
         out_sl_h5 = os.path.join(tmp, "same_label_out.h5")
         ds_sl.to_hdf5(out_sl_h5)
         with h5py.File(out_sl_h5, "r") as f:
-            stable_pieces = sorted(f["stable"].keys())
-            unstable_pieces = sorted(f["unstable"].keys())
-        assert stable_pieces == ["case_x__Axial_vel__000", "case_x__Axial_vel__001"], stable_pieces
-        assert unstable_pieces == ["case_x__Axial_vel__000"], unstable_pieces
+            assert sorted(f["stable"].keys()) == ["case_x"]
+            assert sorted(f["unstable"].keys()) == ["case_x"]
+            stable_pieces = sorted(f["stable"]["case_x"].keys())
+            unstable_pieces = sorted(f["unstable"]["case_x"].keys())
+        assert stable_pieces == ["Axial_vel__000", "Axial_vel__001"], stable_pieces
+        assert unstable_pieces == ["Axial_vel__000"], unstable_pieces
 
     print("self-test OK")
 
