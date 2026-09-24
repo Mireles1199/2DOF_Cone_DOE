@@ -35,6 +35,7 @@ import h5py
 import numpy as np
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
 import matplotlib.ticker as mticker
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -2734,12 +2735,15 @@ class ReferenceViewerApp:
                 cases = [_case_from_source_id(sid) for sid in data["source_ids"]]
                 case_color = _case_color_map(cases)
                 for i, case in enumerate(cases):
-                    x0, x1 = bounds[i], bounds[i + 1]
-                    ax.axvspan(x0, x1, color=case_color[case], alpha=0.20, zorder=0)
-                    ax.text(
-                        (x0 + x1) / 2, 0.96, case, transform=ax.get_xaxis_transform(),
-                        rotation=90, fontsize=6, ha="center", va="top", color="black",
-                    )
+                    ax.axvspan(bounds[i], bounds[i + 1], color=case_color[case], alpha=0.25, zorder=0)
+                # Leyenda compacta (color -> case) en vez de texto sobre cada banda -- con
+                # muchas piezas angostas, el texto rotado quedaba ilegible por más grande que fuera.
+                unique_cases = sorted(case_color)
+                handles = [mpatches.Patch(color=case_color[c], label=c) for c in unique_cases]
+                ax.legend(
+                    handles=handles, loc="upper right", fontsize=7, ncol=min(len(handles), 4) or 1,
+                    framealpha=0.85, borderaxespad=0.3, handlelength=1.2, columnspacing=0.8,
+                )
             ax.set_xlabel("t sintético [s]  (concatenación de tramos, no tiempo real de ensayo)", fontsize=7)
         self._fig_comb.tight_layout()
         self._canvas_comb.draw_idle()
