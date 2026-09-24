@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import h5py
 import numpy as np
@@ -46,7 +46,7 @@ VALID_LABELS = {"stable", "unstable"}
 DEFAULT_H5_PATH         = None   # ej. r"D:\...\doe_results.h5"
 DEFAULT_LABELS_PATH     = "reference_labels.yaml"
 DEFAULT_OUT_H5          = "reference_dataset.h5"
-DEFAULT_CHANNELS        = ["Axial_vel"]
+DEFAULT_CHANNELS        = None   # None -> autodetecta todos los canales de cada caso
 DEFAULT_STRATEGY        = "manual"
 DEFAULT_KAPPA_THRESHOLD = 1.0
 DEFAULT_WARMUP          = 0.0
@@ -164,6 +164,14 @@ def _format_intervals(intervals: List[Tuple[float, float, str]]) -> str:
     return f"[{parts}]"
 
 
+def _discover_channels(grp) -> List[str]:
+    """Subgrupos de `grp` que son canales de señal (tienen dataset 'time' y 'values')."""
+    return [
+        key for key in grp.keys()
+        if isinstance(grp[key], h5py.Group) and "time" in grp[key] and "values" in grp[key]
+    ]
+
+
 def make_label_template(h5_path: str, out_yaml: str, strategy: str = "manual", **strategy_kwargs) -> None:
     """Genera `out_yaml` con todos los grupos de `h5_path`.
 
@@ -187,13 +195,11 @@ def make_label_template(h5_path: str, out_yaml: str, strategy: str = "manual", *
             attrs = dict(grp.attrs)
             kappa_bits = {k: v for k, v in attrs.items() if str(k).startswith("kappa")}
 
+            case_channels = _discover_channels(grp)
             t_range = None
-            for key in grp.keys():
-                sub = grp[key]
-                if isinstance(sub, h5py.Group) and "time" in sub:
-                    t = sub["time"]
-                    t_range = (float(t[0]), float(t[-1]))
-                    break
+            if case_channels:
+                t = grp[case_channels[0]]["time"]
+                t_range = (float(t[0]), float(t[-1]))
 
             intervals = label_fn(grp_name, attrs, t_range, **strategy_kwargs) if t_range is not None else []
 
@@ -246,8 +252,12 @@ def _parse_labels_file(labels_path: str) -> Dict[str, List[Tuple[float, float, s
 # PIEZA 3 — Adaptador de origen (el único que conoce doe_runner)
 # ==============================================================================
 
-def from_doe_h5(h5_path: str, labels_path: str, channels: List[str]) -> ReferenceDataset:
+def from_doe_h5(h5_path: str, labels_path: str, channels: Optional[List[str]] = None) -> ReferenceDataset:
     """Construye un ReferenceDataset a partir de un doe_results.h5 + su YAML de etiquetas.
+
+    `channels`: lista explícita de canales a usar, o None (default) para
+    incluir TODOS los canales disponibles de cada caso (autodetectados) —
+    qué canal usar queda para la Fase 3, acá se guardan todos.
 
     NO importa doe_indicators.py (acoplaría el dataset a los 4 indicadores) —
     la lectura de señal/attrs se replica acá, igual layout que `_load_case`.
@@ -264,8 +274,9 @@ def from_doe_h5(h5_path: str, labels_path: str, channels: List[str]) -> Referenc
 
             grp = f[grp_name]
             base_attrs = dict(grp.attrs)
+            case_channels = channels if channels is not None else _discover_channels(grp)
 
-            for ch in channels:
+            for ch in case_channels:
                 if ch not in grp or "time" not in grp[ch]:
                     log.warning("Señal '%s' no está en grupo '%s' — omitida", ch, grp_name)
                     continue
@@ -404,6 +415,25 @@ def _self_test() -> None:
         _expect_value_error({"case_000": [[0.0, 1.0, "weird_label"]]})       # label desconocido
         _expect_value_error({"case_000": [[0.0, 5.0, "stable"], [4.0, 8.0, "unstable"]]})  # solape
         _expect_value_error({"case_000": [[0.0, 999.0, "stable"]]})          # fuera de rango
+
+        # 4b. from_doe_h5 sin channels (default None) -> autodetecta TODOS los canales del caso
+        multi_h5 = os.path.join(tmp, "multi_ch.h5")
+        multi_yaml = os.path.join(tmp, "multi_labels.yaml")
+        with h5py.File(multi_h5, "w") as f:
+            grp = f.create_group("case_a")
+            for ch in ("Axial_vel", "Axial_disp"):
+                sub = grp.create_group(ch)
+                sub.create_dataset("time", data=t)
+                sub.create_dataset("values", data=t)
+            grp.create_dataset("res_R_p", data=np.array([1.0]))  # no es canal (no es grupo time/values)
+        with open(multi_yaml, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"source": "x", "cases": {"case_a": [[0.0, 10.0, "stable"]]}}, f)
+
+        ds_multi = from_doe_h5(multi_h5, multi_yaml)  # channels=None -> autodetecta
+        assert {s.id for s in ds_multi.signals} == {"case_a/Axial_vel", "case_a/Axial_disp"}
+
+        ds_restricted = from_doe_h5(multi_h5, multi_yaml, channels=["Axial_vel"])
+        assert {s.id for s in ds_restricted.signals} == {"case_a/Axial_vel"}
 
         # 7. to_hdf5 -> from_hdf5, round-trip idéntico
         out_h5 = os.path.join(tmp, "reference_dataset.h5")
