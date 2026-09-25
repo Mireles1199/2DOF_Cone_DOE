@@ -2575,6 +2575,18 @@ class ReferenceViewerApp:
         body.add(left, weight=1)
         right = ttk.Frame(body)
         body.add(right, weight=2)
+        # weight solo afecta el resize, no el ancho inicial, y el ancho de la ventana
+        # "zoomed" tarda un poco en asentarse -- reaplicar en cada resize de la ventana
+        # (no se dispara al arrastrar el sash a mano, solo al cambiar el tamaño de root).
+        def _sync_left_pane_width(_event=None):
+            w = self.root.winfo_width()
+            if w > 100:
+                try:
+                    body.sashpos(0, int(w * 0.32))
+                except tk.TclError:
+                    pass
+        self.root.bind("<Configure>", _sync_left_pane_width)
+        self.root.after(50, _sync_left_pane_width)
 
         self._tree_cols = ("label", "case", "canal", "idx", "t0", "t1", "dur", "kappa")
         widths = (60, 90, 100, 40, 65, 65, 65, 60)
@@ -2642,21 +2654,23 @@ class ReferenceViewerApp:
         if not sel:
             self._canvas_tramos.draw_idle()
             return
+        cmap = cm.get_cmap("tab10")
         last_channel = None
-        for iid in sel:
+        for i, iid in enumerate(sel):
             r = self._index[int(iid)]
             t, y = _load_piece_ty(self.h5_path, r["label"], r["case"], r["piece_name"])
             t_dec, y_dec = _decimate_for_plot(t, y)
-            color = color_verde if r["label"] == "stable" else color_red
+            color = cmap(i % 10)  # color propio por tramo seleccionado, para distinguirlos entre si
+            style = "-" if r["label"] == "stable" else "--"  # el label se sigue viendo por el trazo
             self._ax_tramos.plot(
-                t_dec, y_dec, color=color, lw=0.9, alpha=0.85,
-                label=f"{r['case']}/{r['channel']}__{r['idx']:03d}",
+                t_dec, y_dec, color=color, ls=style, lw=1.1, alpha=0.9,
+                label=f"{r['case']}/{r['channel']}__{r['idx']:03d} ({r['label']})",
             )
             last_channel = r["channel"]
         self._ax_tramos.set_xlabel("t [s]")
         self._ax_tramos.set_ylabel(last_channel or "")
-        if len(sel) <= 8:
-            self._ax_tramos.legend(fontsize=7, loc="best")
+        if len(sel) <= 15:
+            self._ax_tramos.legend(fontsize=10, loc="best")
         self._fig_tramos.tight_layout()
         self._canvas_tramos.draw_idle()
 
