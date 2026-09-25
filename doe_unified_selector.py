@@ -120,6 +120,30 @@ _TYPE_LABELS = {
 
 DECIMATE = 1   # decimación para plots de señales en panel central
 
+# ── Nombre bonito + unidades por canal, para ReferenceViewerApp ─────────────────
+# Base: SIGNAL_YLABELS (ya definido en doe_plotter.py) para Axial_disp/Axial_vel,
+# extendido acá con los demás canales que reference_dataset.py puede autodetectar
+# (Axial_acc, res_R_p, los *_out_deflex de Out_Deflex) sin tocar doe_plotter.py.
+_REFERENCE_CHANNEL_INFO = {
+    "Axial_disp": ("Axial Displacement", "m"),
+    "Axial_vel":  ("Axial Velocity", "m/s"),
+    "Axial_acc":  ("Axial Acceleration", "m/s²"),
+    "res_R_p":    ("Resultant Force", "N"),
+    "Axial_disp_out_deflex": ("Axial Displacement (deflection-corrected)", "m"),
+    "Axial_vel_out_deflex":  ("Axial Velocity (deflection-corrected)", "m/s"),
+}
+
+
+def _channel_title(channel: str) -> str:
+    """Nombre legible del canal (sin unidades), para usar como título de plot."""
+    return _REFERENCE_CHANNEL_INFO.get(channel, (channel, ""))[0]
+
+
+def _channel_ylabel(channel: str) -> str:
+    """'Nombre [unidad]' del canal, para ejes -- ej. 'Axial Velocity [m/s]'."""
+    name, unit = _REFERENCE_CHANNEL_INFO.get(channel, (channel, ""))
+    return f"{name} [{unit}]" if unit else name
+
 
 # ==============================================================================
 # DETECCION DE FORMATO
@@ -2698,7 +2722,7 @@ class ReferenceViewerApp:
 
         cmap = cm.get_cmap("tab10")
         detailed = len(sel) <= self._TRAMOS_DETAIL_LIMIT
-        last_channel = None
+        selected_channels = {self._index[int(iid)]["channel"] for iid in sel}
         stats = []
         for i, iid in enumerate(sel):
             r = self._index[int(iid)]
@@ -2721,23 +2745,34 @@ class ReferenceViewerApp:
                     axes["distribution"].axvline(mu, color=color, lw=1.4, ls="-")
                     axes["distribution"].axvline(mu - sigma, color=color, lw=1.0, ls=":")
                     axes["distribution"].axvline(mu + sigma, color=color, lw=1.0, ls=":")
-            last_channel = r["channel"]
+
+        if len(selected_channels) == 1:
+            channel = next(iter(selected_channels))
+            plot_title = _channel_title(channel)
+            plot_ylabel = _channel_ylabel(channel)
+        else:
+            plot_title = "Selected segments (mixed channels)"
+            plot_ylabel = "value"
+
+        _FS_TITLE, _FS_AXIS, _FS_LEGEND, _FS_TICK = 18, 16, 12, 13
 
         if "signal" in axes:
             ax = axes["signal"]
-            ax.set_xlabel("t [s]", fontsize=9)
-            ax.set_ylabel(last_channel or "", fontsize=9)
+            ax.set_title(plot_title, fontsize=_FS_TITLE)
+            ax.set_xlabel("t [s]", fontsize=_FS_AXIS)
+            ax.set_ylabel(plot_ylabel, fontsize=_FS_AXIS)
             if len(sel) <= 15:
-                ax.legend(fontsize=10, loc="best")
-            ax.tick_params(axis="both", labelsize=8)
+                ax.legend(fontsize=_FS_LEGEND, loc="best")
+            ax.tick_params(axis="both", labelsize=_FS_TICK)
 
         if "distribution" in axes:
             ax = axes["distribution"]
-            ax.set_xlabel("signal value", fontsize=9)
-            ax.set_ylabel("density", fontsize=9)
+            ax.set_title(plot_title, fontsize=_FS_TITLE)
+            ax.set_xlabel(plot_ylabel, fontsize=_FS_AXIS)
+            ax.set_ylabel("Density", fontsize=_FS_AXIS)
             if len(sel) <= 15:
-                ax.legend(fontsize=9, loc="best")
-            ax.tick_params(axis="both", labelsize=8)
+                ax.legend(fontsize=_FS_LEGEND, loc="best")
+            ax.tick_params(axis="both", labelsize=_FS_TICK)
 
         self._fig_tramos.tight_layout()
         self._canvas_tramos.draw_idle()
@@ -2821,19 +2856,24 @@ class ReferenceViewerApp:
 
     def _replot_combinado(self) -> None:
         show_dist = self._show_distribution_var.get()
+        channel = self._channel_var.get()
+        title_base = _channel_title(channel)
+        ylabel = _channel_ylabel(channel)
+        _FS_TITLE, _FS_AXIS, _FS_LEGEND, _FS_TICK = 18, 16, 12, 13
+
         for ax, label, color in (
             (self._ax_stable, "stable", color_verde),
             (self._ax_unstable, "unstable", color_red),
         ):
             ax.clear()
             data = self._combined_data.get(label)
-            ax.set_title(label, fontsize=11)
-            ax.tick_params(axis="both", labelsize=8)
+            ax.set_title(f"{title_base} — {label}", fontsize=_FS_TITLE)
+            ax.tick_params(axis="both", labelsize=_FS_TICK)
             if not data or len(data["y"]) == 0:
                 continue
 
             if show_dist:
-                self._plot_distribution(ax, data["y"], color)
+                self._plot_distribution(ax, data["y"], color, xlabel=ylabel)
                 continue
 
             t, y, fs = data["t"], data["y"], data["fs"]
@@ -2850,17 +2890,19 @@ class ReferenceViewerApp:
                 unique_cases = sorted(case_color)
                 handles = [mpatches.Patch(color=case_color[c], label=c) for c in unique_cases]
                 ax.legend(
-                    handles=handles, loc="upper right", fontsize=9, ncol=min(len(handles), 4) or 1,
+                    handles=handles, loc="upper right", fontsize=_FS_LEGEND, ncol=min(len(handles), 4) or 1,
                     framealpha=0.85, borderaxespad=0.3, handlelength=1.2, columnspacing=0.8,
                 )
-            ax.set_xlabel("synthetic t [s]  (concatenation of segments, not real test time)", fontsize=9)
+            ax.set_xlabel("t [s]", fontsize=_FS_AXIS)  # concatenación de tramos -- ya no es tiempo real de ensayo
+            ax.set_ylabel(ylabel, fontsize=_FS_AXIS)
         self._fig_comb.tight_layout()
         self._canvas_comb.draw_idle()
         self._update_meta_text()
 
     @staticmethod
-    def _plot_distribution(ax, y: np.ndarray, color) -> None:
+    def _plot_distribution(ax, y: np.ndarray, color, xlabel: str = "signal value") -> None:
         """Histograma de `y` + curva gaussiana ajustada, para ver a ojo qué tan normal es la forma."""
+        _FS_AXIS, _FS_LEGEND, _FS_TEXT = 16, 12, 12
         y = np.asarray(y).ravel()
         mu, sigma = float(np.mean(y)), float(np.std(y))
         ax.hist(y, bins=80, density=True, color=color, alpha=0.5, edgecolor="none")
@@ -2871,12 +2913,12 @@ class ReferenceViewerApp:
             skew = float(np.mean(((y - mu) / sigma) ** 3))
             ax.text(
                 0.02, 0.95, f"μ={mu:.3g}\nσ={sigma:.3g}\nskew={skew:.3g}",
-                transform=ax.transAxes, fontsize=9, va="top", ha="left",
+                transform=ax.transAxes, fontsize=_FS_TEXT, va="top", ha="left",
                 bbox=dict(boxstyle="round", facecolor="white", alpha=0.7, edgecolor="0.7"),
             )
-            ax.legend(fontsize=9, loc="upper right")
-        ax.set_xlabel("signal value", fontsize=9)
-        ax.set_ylabel("density", fontsize=9)
+            ax.legend(fontsize=_FS_LEGEND, loc="upper right")
+        ax.set_xlabel(xlabel, fontsize=_FS_AXIS)
+        ax.set_ylabel("Density", fontsize=_FS_AXIS)
 
     def _update_meta_text(self) -> None:
         self._meta_text.delete("1.0", tk.END)
@@ -2935,10 +2977,12 @@ def _launch_app_for(root: tk.Tk, h5_paths) -> None:
     root.state("zoomed")
     nb = ttk.Notebook(root)
     nb.pack(fill=tk.BOTH, expand=True)
+    _TAB_ICON = {TYPE_REFERENCE_DATASET: "〰️ Segments", TYPE_REFERENCE_COMBINED: "📊 Combined"}
     for path in h5_paths:
         h5_type = detect_h5_type(path)
         tab = ttk.Frame(nb)
-        nb.add(tab, text=os.path.basename(path))
+        tab_label = _TAB_ICON.get(h5_type, _TYPE_LABELS.get(h5_type, h5_type).split("(")[0].strip())
+        nb.add(tab, text=f"{tab_label}  —  {os.path.basename(path)}")
         if h5_type in (TYPE_REFERENCE_DATASET, TYPE_REFERENCE_COMBINED):
             ReferenceViewerApp(root, path, h5_type, container=tab)
         else:
