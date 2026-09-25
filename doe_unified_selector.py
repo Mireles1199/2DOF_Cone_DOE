@@ -114,8 +114,8 @@ _TYPE_LABELS = {
     TYPE_DOE_INDICATOR: "DOE Indicator Results",
     TYPE_NOISE_IND    : "DOE Noise Indicators",
     TYPE_MODEL_SNR    : "DOE Model SNR",
-    TYPE_REFERENCE_DATASET : "Reference Dataset  (tramos por caso)",
-    TYPE_REFERENCE_COMBINED: "Reference Combined  (señal por label+canal)",
+    TYPE_REFERENCE_DATASET : "Reference Dataset  (segments per case)",
+    TYPE_REFERENCE_COMBINED: "Reference Combined  (signal per label+channel)",
 }
 
 DECIMATE = 1   # decimación para plots de señales en panel central
@@ -2549,25 +2549,32 @@ class ReferenceViewerApp:
         bar.pack(side=tk.TOP, fill=tk.X)
         ttk.Button(bar, text="📂  Open another .h5", command=self._open_file).pack(side=tk.LEFT, padx=4)
         ttk.Label(
-            bar, text=f"{len(self._index)} tramos  |  {os.path.basename(self.h5_path)}",
-            foreground="#444444", font=("Arial", 9),
+            bar, text=f"{len(self._index)} segments  |  {os.path.basename(self.h5_path)}",
+            foreground="#444444", font=("Arial", 10),
         ).pack(side=tk.LEFT, padx=8)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         labels_present = sorted({r["label"] for r in self._index})
         channels_present = sorted({r["channel"] for r in self._index})
-        ttk.Label(bar, text="Label:", font=("Arial", 8)).pack(side=tk.LEFT)
-        self._label_filter_var = tk.StringVar(value="(todos)")
+        ttk.Label(bar, text="Label:", font=("Arial", 9)).pack(side=tk.LEFT)
+        self._label_filter_var = tk.StringVar(value="(all)")
         _lc = ttk.Combobox(bar, textvariable=self._label_filter_var, state="readonly", width=10,
-                            values=["(todos)"] + labels_present)
+                            values=["(all)"] + labels_present)
         _lc.pack(side=tk.LEFT, padx=(2, 8))
         _lc.bind("<<ComboboxSelected>>", self._refresh_tree)
-        ttk.Label(bar, text="Canal:", font=("Arial", 8)).pack(side=tk.LEFT)
-        self._channel_filter_var = tk.StringVar(value="(todos)")
+        ttk.Label(bar, text="Channel:", font=("Arial", 9)).pack(side=tk.LEFT)
+        self._channel_filter_var = tk.StringVar(value="(all)")
         _cc = ttk.Combobox(bar, textvariable=self._channel_filter_var, state="readonly", width=14,
-                            values=["(todos)"] + channels_present)
+                            values=["(all)"] + channels_present)
         _cc.pack(side=tk.LEFT, padx=2)
         _cc.bind("<<ComboboxSelected>>", self._refresh_tree)
+
+        ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
+        self._tramos_show_distribution_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            bar, text="📊 Show distribution", variable=self._tramos_show_distribution_var,
+            command=self._plot_selected_tramos,
+        ).pack(side=tk.LEFT, padx=4)
 
         body = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
         body.pack(fill=tk.BOTH, expand=True)
@@ -2588,8 +2595,8 @@ class ReferenceViewerApp:
         self.root.bind("<Configure>", _sync_left_pane_width)
         self.root.after(50, _sync_left_pane_width)
 
-        self._tree_cols = ("label", "case", "canal", "idx", "t0", "t1", "dur", "kappa")
-        widths = (60, 90, 100, 40, 65, 65, 65, 60)
+        self._tree_cols = ("label", "case", "channel", "idx", "t0", "t1", "duration", "kappa")
+        widths = (60, 90, 100, 40, 65, 65, 75, 60)
         self._tree_sort_col: Optional[str] = None
         self._tree_sort_rev = False
         self._tree = ttk.Treeview(left, columns=self._tree_cols, show="headings", selectmode="extended")
@@ -2615,9 +2622,9 @@ class ReferenceViewerApp:
         lab = self._label_filter_var.get()
         ch = self._channel_filter_var.get()
         for i, r in enumerate(self._index):
-            if lab != "(todos)" and r["label"] != lab:
+            if lab != "(all)" and r["label"] != lab:
                 continue
-            if ch != "(todos)" and r["channel"] != ch:
+            if ch != "(all)" and r["channel"] != ch:
                 continue
             kappa_txt = f"{r['kappa']:.3f}" if r["kappa"] is not None else ""
             self._tree.insert("", tk.END, iid=str(i), values=(
@@ -2655,22 +2662,38 @@ class ReferenceViewerApp:
             self._canvas_tramos.draw_idle()
             return
         cmap = cm.get_cmap("tab10")
+        show_dist = self._tramos_show_distribution_var.get()
         last_channel = None
         for i, iid in enumerate(sel):
             r = self._index[int(iid)]
             t, y = _load_piece_ty(self.h5_path, r["label"], r["case"], r["piece_name"])
-            t_dec, y_dec = _decimate_for_plot(t, y)
             color = cmap(i % 10)  # color propio por tramo seleccionado, para distinguirlos entre si
-            style = "-" if r["label"] == "stable" else "--"  # el label se sigue viendo por el trazo
-            self._ax_tramos.plot(
-                t_dec, y_dec, color=color, ls=style, lw=1.1, alpha=0.9,
-                label=f"{r['case']}/{r['channel']}__{r['idx']:03d} ({r['label']})",
-            )
+            piece_label = f"{r['case']}/{r['channel']}__{r['idx']:03d} ({r['label']})"
+
+            if show_dist:
+                y_flat = np.asarray(y).ravel()
+                self._ax_tramos.hist(y_flat, bins=60, density=True, color=color, alpha=0.4, label=piece_label)
+                if len(sel) <= 5:
+                    mu, sigma = float(np.mean(y_flat)), float(np.std(y_flat))
+                    if sigma > 0:
+                        xg = np.linspace(y_flat.min(), y_flat.max(), 200)
+                        pdf = np.exp(-0.5 * ((xg - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+                        self._ax_tramos.plot(xg, pdf, color=color, lw=1.2, ls="--")
+            else:
+                t_dec, y_dec = _decimate_for_plot(t, y)
+                style = "-" if r["label"] == "stable" else "--"  # el label se sigue viendo por el trazo
+                self._ax_tramos.plot(t_dec, y_dec, color=color, ls=style, lw=1.1, alpha=0.9, label=piece_label)
             last_channel = r["channel"]
-        self._ax_tramos.set_xlabel("t [s]")
-        self._ax_tramos.set_ylabel(last_channel or "")
+
+        if show_dist:
+            self._ax_tramos.set_xlabel("signal value", fontsize=9)
+            self._ax_tramos.set_ylabel("density", fontsize=9)
+        else:
+            self._ax_tramos.set_xlabel("t [s]", fontsize=9)
+            self._ax_tramos.set_ylabel(last_channel or "", fontsize=9)
         if len(sel) <= 15:
             self._ax_tramos.legend(fontsize=10, loc="best")
+        self._ax_tramos.tick_params(axis="both", labelsize=8)
         self._fig_tramos.tight_layout()
         self._canvas_tramos.draw_idle()
 
@@ -2684,12 +2707,12 @@ class ReferenceViewerApp:
         bar.pack(side=tk.TOP, fill=tk.X)
         ttk.Button(bar, text="📂  Open another .h5", command=self._open_file).pack(side=tk.LEFT, padx=4)
         ttk.Label(
-            bar, text=f"{len(channels)} canales  |  {os.path.basename(self.h5_path)}",
-            foreground="#444444", font=("Arial", 9),
+            bar, text=f"{len(channels)} channels  |  {os.path.basename(self.h5_path)}",
+            foreground="#444444", font=("Arial", 10),
         ).pack(side=tk.LEFT, padx=8)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
-        ttk.Label(bar, text="Canal:", font=("Arial", 8)).pack(side=tk.LEFT)
+        ttk.Label(bar, text="Channel:", font=("Arial", 9)).pack(side=tk.LEFT)
         self._channel_var = tk.StringVar(value=channels[0] if channels else "")
         _chc = ttk.Combobox(bar, textvariable=self._channel_var, state="readonly", width=16, values=channels)
         _chc.pack(side=tk.LEFT, padx=(2, 8))
@@ -2697,14 +2720,14 @@ class ReferenceViewerApp:
 
         self._color_by_piece_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            bar, text="🎨 Colorear tramos", variable=self._color_by_piece_var,
+            bar, text="🎨 Color segments", variable=self._color_by_piece_var,
             command=self._replot_combinado,
         ).pack(side=tk.LEFT, padx=4)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
         self._show_distribution_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            bar, text="📊 Ver distribución", variable=self._show_distribution_var,
+            bar, text="📊 Show distribution", variable=self._show_distribution_var,
             command=self._replot_combinado,
         ).pack(side=tk.LEFT, padx=4)
 
@@ -2722,8 +2745,8 @@ class ReferenceViewerApp:
         self._canvas_comb.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         NavigationToolbar2Tk(self._canvas_comb, plot_frame).update()
 
-        ttk.Label(meta_frame, text="Metadata", font=("Arial", 9, "bold")).pack(anchor=tk.W, padx=4, pady=(4, 0))
-        self._meta_text = tk.Text(meta_frame, wrap=tk.WORD, width=38, font=("Consolas", 8))
+        ttk.Label(meta_frame, text="Metadata", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=4, pady=(4, 0))
+        self._meta_text = tk.Text(meta_frame, wrap=tk.WORD, width=38, font=("Consolas", 9))
         self._meta_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
         if channels:
@@ -2746,7 +2769,8 @@ class ReferenceViewerApp:
         ):
             ax.clear()
             data = self._combined_data.get(label)
-            ax.set_title(label, fontsize=9)
+            ax.set_title(label, fontsize=11)
+            ax.tick_params(axis="both", labelsize=8)
             if not data or len(data["y"]) == 0:
                 continue
 
@@ -2768,10 +2792,10 @@ class ReferenceViewerApp:
                 unique_cases = sorted(case_color)
                 handles = [mpatches.Patch(color=case_color[c], label=c) for c in unique_cases]
                 ax.legend(
-                    handles=handles, loc="upper right", fontsize=7, ncol=min(len(handles), 4) or 1,
+                    handles=handles, loc="upper right", fontsize=9, ncol=min(len(handles), 4) or 1,
                     framealpha=0.85, borderaxespad=0.3, handlelength=1.2, columnspacing=0.8,
                 )
-            ax.set_xlabel("t sintético [s]  (concatenación de tramos, no tiempo real de ensayo)", fontsize=7)
+            ax.set_xlabel("synthetic t [s]  (concatenation of segments, not real test time)", fontsize=9)
         self._fig_comb.tight_layout()
         self._canvas_comb.draw_idle()
         self._update_meta_text()
@@ -2785,16 +2809,16 @@ class ReferenceViewerApp:
         if sigma > 0:
             x = np.linspace(y.min(), y.max(), 300)
             pdf = np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
-            ax.plot(x, pdf, color="black", lw=1.2, ls="--", label="Normal ajustada")
+            ax.plot(x, pdf, color="black", lw=1.2, ls="--", label="Fitted normal")
             skew = float(np.mean(((y - mu) / sigma) ** 3))
             ax.text(
                 0.02, 0.95, f"μ={mu:.3g}\nσ={sigma:.3g}\nskew={skew:.3g}",
-                transform=ax.transAxes, fontsize=7, va="top", ha="left",
+                transform=ax.transAxes, fontsize=9, va="top", ha="left",
                 bbox=dict(boxstyle="round", facecolor="white", alpha=0.7, edgecolor="0.7"),
             )
-            ax.legend(fontsize=7, loc="upper right")
-        ax.set_xlabel("valor de la señal", fontsize=7)
-        ax.set_ylabel("densidad", fontsize=7)
+            ax.legend(fontsize=9, loc="upper right")
+        ax.set_xlabel("signal value", fontsize=9)
+        ax.set_ylabel("density", fontsize=9)
 
     def _update_meta_text(self) -> None:
         self._meta_text.delete("1.0", tk.END)
@@ -2802,14 +2826,14 @@ class ReferenceViewerApp:
             data = self._combined_data.get(label)
             self._meta_text.insert(tk.END, f"== {label} ==\n")
             if not data:
-                self._meta_text.insert(tk.END, "  (sin datos para este canal)\n\n")
+                self._meta_text.insert(tk.END, "  (no data for this channel)\n\n")
                 continue
             n_pieces = len(data["source_ids"]) or len(data["piece_lengths"])
             dur = len(data["y"]) / data["fs"] if data["fs"] else 0.0
-            self._meta_text.insert(tk.END, f"n_pieces: {n_pieces}\n")
-            self._meta_text.insert(tk.END, f"duración total: {dur:.2f} s\n")
+            self._meta_text.insert(tk.END, f"pieces: {n_pieces}\n")
+            self._meta_text.insert(tk.END, f"total duration: {dur:.2f} s\n")
             if data["source_ids"]:
-                self._meta_text.insert(tk.END, "piezas:\n")
+                self._meta_text.insert(tk.END, "source segments:\n")
                 for sid in data["source_ids"]:
                     self._meta_text.insert(tk.END, f"  - {sid}\n")
             self._meta_text.insert(tk.END, "\n")
