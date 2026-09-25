@@ -2570,6 +2570,11 @@ class ReferenceViewerApp:
         _cc.bind("<<ComboboxSelected>>", self._refresh_tree)
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
+        self._tramos_show_signal_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            bar, text="〰️ Show signal", variable=self._tramos_show_signal_var,
+            command=self._plot_selected_tramos,
+        ).pack(side=tk.LEFT, padx=4)
         self._tramos_show_distribution_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             bar, text="📊 Show distribution", variable=self._tramos_show_distribution_var,
@@ -2581,7 +2586,9 @@ class ReferenceViewerApp:
         left = ttk.Frame(body)
         body.add(left, weight=1)
         right = ttk.Frame(body)
-        body.add(right, weight=2)
+        body.add(right, weight=3)
+        stats_frame = ttk.Frame(body)
+        body.add(stats_frame, weight=1)
         # weight solo afecta el resize, no el ancho inicial, y el ancho de la ventana
         # "zoomed" tarda un poco en asentarse -- reaplicar en cada resize de la ventana
         # (no se dispara al arrastrar el sash a mano, solo al cambiar el tamaño de root).
@@ -2590,6 +2597,7 @@ class ReferenceViewerApp:
             if w > 100:
                 try:
                     body.sashpos(0, int(w * 0.32))
+                    body.sashpos(1, int(w * 0.82))
                 except tk.TclError:
                     pass
         self.root.bind("<Configure>", _sync_left_pane_width)
@@ -2610,10 +2618,14 @@ class ReferenceViewerApp:
         self._tree.bind("<<TreeviewSelect>>", lambda _e: self._plot_selected_tramos())
 
         self._fig_tramos = Figure(figsize=(7, 5), dpi=100)
-        self._ax_tramos = self._fig_tramos.add_subplot(111)
+        self._fig_tramos.add_subplot(111)
         self._canvas_tramos = FigureCanvasTkAgg(self._fig_tramos, master=right)
         self._canvas_tramos.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         NavigationToolbar2Tk(self._canvas_tramos, right).update()
+
+        ttk.Label(stats_frame, text="Mean / Std", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=4, pady=(4, 0))
+        self._tramos_stats_text = tk.Text(stats_frame, wrap=tk.WORD, width=28, font=("Consolas", 9))
+        self._tramos_stats_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
         self._refresh_tree()
 
@@ -2655,47 +2667,76 @@ class ReferenceViewerApp:
             arrow = (" ▼" if self._tree_sort_rev else " ▲") if c == self._tree_sort_col else ""
             self._tree.heading(c, text=hdr + arrow, command=lambda cc=c: self._sort_tree_by(cc))
 
+    _TRAMOS_DETAIL_LIMIT = 5  # por encima de esto, sin gaussiana/lineas mu+-sigma/stats detalladas en la leyenda
+
     def _plot_selected_tramos(self) -> None:
         sel = self._tree.selection()
-        self._ax_tramos.clear()
+        self._fig_tramos.clf()
+
+        show_signal = self._tramos_show_signal_var.get()
+        show_dist = self._tramos_show_distribution_var.get()
+        panels = [p for p, on in (("signal", show_signal), ("distribution", show_dist)) if on] or ["signal"]
+        axes = {kind: self._fig_tramos.add_subplot(len(panels), 1, i + 1) for i, kind in enumerate(panels)}
+
         if not sel:
             self._canvas_tramos.draw_idle()
+            self._update_tramos_stats_panel([])
             return
+
         cmap = cm.get_cmap("tab10")
-        show_dist = self._tramos_show_distribution_var.get()
+        detailed = len(sel) <= self._TRAMOS_DETAIL_LIMIT
         last_channel = None
+        stats = []
         for i, iid in enumerate(sel):
             r = self._index[int(iid)]
             t, y = _load_piece_ty(self.h5_path, r["label"], r["case"], r["piece_name"])
             color = cmap(i % 10)  # color propio por tramo seleccionado, para distinguirlos entre si
             piece_label = f"{r['case']}/{r['channel']}__{r['idx']:03d} ({r['label']})"
+            y_flat = np.asarray(y).ravel()
+            mu, sigma = float(np.mean(y_flat)), float(np.std(y_flat))
+            stats.append((piece_label, mu, sigma))
 
-            if show_dist:
-                y_flat = np.asarray(y).ravel()
-                self._ax_tramos.hist(y_flat, bins=60, density=True, color=color, alpha=0.4, label=piece_label)
-                if len(sel) <= 5:
-                    mu, sigma = float(np.mean(y_flat)), float(np.std(y_flat))
-                    if sigma > 0:
-                        xg = np.linspace(y_flat.min(), y_flat.max(), 200)
-                        pdf = np.exp(-0.5 * ((xg - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
-                        self._ax_tramos.plot(xg, pdf, color=color, lw=1.2, ls="--")
-            else:
+            if "signal" in axes:
                 t_dec, y_dec = _decimate_for_plot(t, y)
                 style = "-" if r["label"] == "stable" else "--"  # el label se sigue viendo por el trazo
-                self._ax_tramos.plot(t_dec, y_dec, color=color, ls=style, lw=1.1, alpha=0.9, label=piece_label)
+                axes["signal"].plot(t_dec, y_dec, color=color, ls=style, lw=1.1, alpha=0.9, label=piece_label)
+
+            if "distribution" in axes:
+                dist_label = f"{piece_label}  (μ={mu:.3g}, σ²={sigma ** 2:.3g})" if detailed else piece_label
+                axes["distribution"].hist(y_flat, bins=60, density=True, color=color, alpha=0.4, label=dist_label)
+                if detailed and sigma > 0:
+                    axes["distribution"].axvline(mu, color=color, lw=1.4, ls="-")
+                    axes["distribution"].axvline(mu - sigma, color=color, lw=1.0, ls=":")
+                    axes["distribution"].axvline(mu + sigma, color=color, lw=1.0, ls=":")
             last_channel = r["channel"]
 
-        if show_dist:
-            self._ax_tramos.set_xlabel("signal value", fontsize=9)
-            self._ax_tramos.set_ylabel("density", fontsize=9)
-        else:
-            self._ax_tramos.set_xlabel("t [s]", fontsize=9)
-            self._ax_tramos.set_ylabel(last_channel or "", fontsize=9)
-        if len(sel) <= 15:
-            self._ax_tramos.legend(fontsize=10, loc="best")
-        self._ax_tramos.tick_params(axis="both", labelsize=8)
+        if "signal" in axes:
+            ax = axes["signal"]
+            ax.set_xlabel("t [s]", fontsize=9)
+            ax.set_ylabel(last_channel or "", fontsize=9)
+            if len(sel) <= 15:
+                ax.legend(fontsize=10, loc="best")
+            ax.tick_params(axis="both", labelsize=8)
+
+        if "distribution" in axes:
+            ax = axes["distribution"]
+            ax.set_xlabel("signal value", fontsize=9)
+            ax.set_ylabel("density", fontsize=9)
+            if len(sel) <= 15:
+                ax.legend(fontsize=9, loc="best")
+            ax.tick_params(axis="both", labelsize=8)
+
         self._fig_tramos.tight_layout()
         self._canvas_tramos.draw_idle()
+        self._update_tramos_stats_panel(stats)
+
+    def _update_tramos_stats_panel(self, stats) -> None:
+        self._tramos_stats_text.delete("1.0", tk.END)
+        if not stats:
+            self._tramos_stats_text.insert(tk.END, "(no segments selected)\n")
+            return
+        for piece_label, mu, sigma in stats:
+            self._tramos_stats_text.insert(tk.END, f"{piece_label}\n  μ = {mu:.4g}\n  σ = {sigma:.4g}\n\n")
 
     # ══════════════════════════════ PESTAÑA "COMBINADO" ════════════════════════════
     def _build_combinado_ui(self) -> None:
