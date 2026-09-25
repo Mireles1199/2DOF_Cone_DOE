@@ -55,13 +55,13 @@ log = logging.getLogger(__name__)
 # ))
 
 # Step 1 - Detection Limite Lobes
-SCRIPT_DIR = os.path.abspath(os.path.join(
-    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-    "Chatter-Criteria",
-    "CAMP10_Chatter_detection_Methodes",
-    "Convergency_Simulation",
-    "1_Detection_Limite_Lobes",
-))
+# SCRIPT_DIR = os.path.abspath(os.path.join(
+#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+#     "Chatter-Criteria",
+#     "CAMP10_Chatter_detection_Methodes",
+#     "Convergency_Simulation",
+#     "1_Detection_Limite_Lobes",
+# ))
 
 # Step 2 - Senitivity Dexels
 # SCRIPT_DIR = os.path.abspath(os.path.join(
@@ -73,13 +73,13 @@ SCRIPT_DIR = os.path.abspath(os.path.join(
 # ))
 
 # Step 3 - Senitivity dt
-SCRIPT_DIR = os.path.abspath(os.path.join(
-    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
-    "Chatter-Criteria",
-    "CAMP10_Chatter_detection_Methodes",
-    "Convergency_Simulation",
-    "3_Sensitivity_dt",
-))
+# SCRIPT_DIR = os.path.abspath(os.path.join(
+#     r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage",
+#     "Chatter-Criteria",
+#     "CAMP10_Chatter_detection_Methodes",
+#     "Convergency_Simulation",
+#     "3_Sensitivity_dt",
+# ))
 
 
 # Training - Tube
@@ -90,6 +90,12 @@ SCRIPT_DIR = os.path.abspath(os.path.join(
 #     "Convergency_Simulation",
 #     "4_DOE_Data_Training_Tube",
 # ))
+
+# Training - Tube
+SCRIPT_DIR = os.path.abspath(os.path.join(
+    r"D:\Thesis\03-Code_Storage\02-Altintlas_Nessy2m_Storage\2DOF_Cone_New"
+))
+
 
 
 
@@ -102,6 +108,8 @@ DEFAULT_N2M_BAT = os.path.join(
     r"\VP2025.1.0\VP2025.1.0\nessy2m",
     "n2m.bat",
 )
+
+DOE_NAME = "Cono_dexel_20e-5_dt_200"
 
 # ==============================================================================
 # CONFIGURACION DEL DOE
@@ -140,7 +148,7 @@ DEFAULT_N2M_BAT = os.path.join(
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_10_patch_0.95"
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_5"
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1"
-DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1_patch_0.985"
+# DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1_patch_0.985"
 
 
 # DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_40e-5_RUN_10_patch_0.95"
@@ -203,7 +211,7 @@ DOE_NAME = "DOE_Detection_Limite_Lobes_dxl_1.25e-5_RUN_1_patch_0.985"
 
 
 # ============== Training Tube ============
-DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.91-1.09"
+# DOE_NAME = "DOE_Training_Tube_dxl_20e-5_RUN_10_0.91-1.09"
 
 
 
@@ -276,22 +284,16 @@ DOE_FACTORIAL = {
 
 
 # ]
-Ap_tube = [ 8.48E-03 ]  # 0.985
+Ap_tube = [ 5.0E-03 ]  # 0.985
 spin_rate_sweep = 12098.28
 f_tooth_sweep = 0.05
-dxl_size_sweep = 1.25e-5
+dxl_size_sweep = 20e-5
 nb_dt_rev_sweep = 200
 
 DOE_SWEEP = {
-
     # Training Tube 0.5-2
     "$Ap_start$"  : Ap_tube,
-    "$Ap_end$"    : Ap_tube,
-
-
-
-
-
+    "$Ap_end$"    : [15.0e-3],
 
     "$spin_rate$" : np.linspace(spin_rate_sweep, spin_rate_sweep, len(Ap_tube)).tolist(),
 
