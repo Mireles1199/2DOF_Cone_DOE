@@ -2701,6 +2701,13 @@ class ReferenceViewerApp:
             command=self._replot_combinado,
         ).pack(side=tk.LEFT, padx=4)
 
+        ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
+        self._show_distribution_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            bar, text="📊 Ver distribución", variable=self._show_distribution_var,
+            command=self._replot_combinado,
+        ).pack(side=tk.LEFT, padx=4)
+
         body = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
         body.pack(fill=tk.BOTH, expand=True)
         plot_frame = ttk.Frame(body)
@@ -2732,6 +2739,7 @@ class ReferenceViewerApp:
         self._replot_combinado()
 
     def _replot_combinado(self) -> None:
+        show_dist = self._show_distribution_var.get()
         for ax, label, color in (
             (self._ax_stable, "stable", color_verde),
             (self._ax_unstable, "unstable", color_red),
@@ -2741,6 +2749,11 @@ class ReferenceViewerApp:
             ax.set_title(label, fontsize=9)
             if not data or len(data["y"]) == 0:
                 continue
+
+            if show_dist:
+                self._plot_distribution(ax, data["y"], color)
+                continue
+
             t, y, fs = data["t"], data["y"], data["fs"]
             t_dec, y_dec = _decimate_for_plot(t, y)
             ax.plot(t_dec, y_dec, color=color, lw=0.7)
@@ -2762,6 +2775,26 @@ class ReferenceViewerApp:
         self._fig_comb.tight_layout()
         self._canvas_comb.draw_idle()
         self._update_meta_text()
+
+    @staticmethod
+    def _plot_distribution(ax, y: np.ndarray, color) -> None:
+        """Histograma de `y` + curva gaussiana ajustada, para ver a ojo qué tan normal es la forma."""
+        y = np.asarray(y).ravel()
+        mu, sigma = float(np.mean(y)), float(np.std(y))
+        ax.hist(y, bins=80, density=True, color=color, alpha=0.5, edgecolor="none")
+        if sigma > 0:
+            x = np.linspace(y.min(), y.max(), 300)
+            pdf = np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+            ax.plot(x, pdf, color="black", lw=1.2, ls="--", label="Normal ajustada")
+            skew = float(np.mean(((y - mu) / sigma) ** 3))
+            ax.text(
+                0.02, 0.95, f"μ={mu:.3g}\nσ={sigma:.3g}\nskew={skew:.3g}",
+                transform=ax.transAxes, fontsize=7, va="top", ha="left",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.7, edgecolor="0.7"),
+            )
+            ax.legend(fontsize=7, loc="upper right")
+        ax.set_xlabel("valor de la señal", fontsize=7)
+        ax.set_ylabel("densidad", fontsize=7)
 
     def _update_meta_text(self) -> None:
         self._meta_text.delete("1.0", tk.END)
