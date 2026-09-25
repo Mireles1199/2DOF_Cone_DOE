@@ -62,7 +62,7 @@ DEFAULT_WARMUP          = 0.0
 DEFAULT_IN_H5           = None   # None -> "<carpeta de h5_path>/reference_dataset.h5" (entrada de "combine")
 DEFAULT_OUT_COMBINED    = None   # None -> "<carpeta de h5_path>/reference_combined.h5" (salida de "combine")
 DEFAULT_T_START         = 0.05   # None -> sin corte al inicio. Recorte fijo de señal (ej. quitar entrada de herramienta)
-DEFAULT_T_END           = 14.5   # None -> sin corte al final. Idem para la salida de herramienta
+DEFAULT_T_END           = 14.0   # None -> sin corte al final. Idem para la salida de herramienta
 
 
 # ==============================================================================
@@ -210,12 +210,39 @@ def _masked_range(
     return float(t_masked[0]), float(t_masked[-1])
 
 
+_OUT_DEFLEX_GROUP = "Out_Deflex"  # escrito por Etapa_1.py / static_deflection.py, no por este módulo
+
+
 def _discover_channels(grp) -> List[str]:
-    """Subgrupos de `grp` que son canales de señal (tienen dataset 'time' y 'values')."""
-    return [
+    """Subgrupos de `grp` que son canales de señal (tienen dataset 'time' y 'values').
+
+    Incluye también los que están un nivel más adentro, en `Out_Deflex` (ej.
+    `Axial_disp_out_deflex`), si esa etapa ya corrió sobre este doe_results.h5.
+    """
+    channels = [
         key for key in grp.keys()
         if isinstance(grp[key], h5py.Group) and "time" in grp[key] and "values" in grp[key]
     ]
+    out_grp = grp.get(_OUT_DEFLEX_GROUP)
+    if isinstance(out_grp, h5py.Group):
+        channels += [
+            key for key in out_grp.keys()
+            if isinstance(out_grp[key], h5py.Group) and "time" in out_grp[key] and "values" in out_grp[key]
+        ]
+    return channels
+
+
+def _resolve_channel_group(grp, channel: str):
+    """Grupo con 'time'/'values' para `channel` -- directo bajo `grp`, o (si no
+    está ahí) dentro de `Out_Deflex`. None si no se encuentra en ningún lado."""
+    if channel in grp and isinstance(grp[channel], h5py.Group) and "time" in grp[channel] and "values" in grp[channel]:
+        return grp[channel]
+    out_grp = grp.get(_OUT_DEFLEX_GROUP)
+    if isinstance(out_grp, h5py.Group) and channel in out_grp:
+        sub = out_grp[channel]
+        if isinstance(sub, h5py.Group) and "time" in sub and "values" in sub:
+            return sub
+    return None
 
 
 def make_label_template(
@@ -253,7 +280,8 @@ def make_label_template(
             case_channels = _discover_channels(grp)
             t_range = None
             if case_channels:
-                t_range = _masked_range(grp[case_channels[0]]["time"], t_start, t_end)
+                first_ch_grp = _resolve_channel_group(grp, case_channels[0])
+                t_range = _masked_range(first_ch_grp["time"], t_start, t_end)
 
             intervals = label_fn(grp_name, attrs, t_range, **strategy_kwargs) if t_range is not None else []
 
@@ -340,12 +368,13 @@ def from_doe_h5(
             case_channels = channels if channels is not None else _discover_channels(grp)
 
             for ch in case_channels:
-                if ch not in grp or "time" not in grp[ch]:
+                ch_grp = _resolve_channel_group(grp, ch)
+                if ch_grp is None:
                     log.warning("Señal '%s' no está en grupo '%s' — omitida", ch, grp_name)
                     continue
 
-                t = grp[f"{ch}/time"][()]
-                y = grp[f"{ch}/values"][()]
+                t = ch_grp["time"][()]
+                y = ch_grp["values"][()]
                 if t_start is not None or t_end is not None:
                     lo = t[0] if t_start is None else t_start
                     hi = t[-1] if t_end is None else t_end
@@ -603,6 +632,26 @@ def _self_test() -> None:
 
         ds_restricted = from_doe_h5(multi_h5, multi_yaml, channels=["Axial_vel"])
         assert {s.id for s in ds_restricted.signals} == {"case_a/Axial_vel"}
+
+        # 4d. canales dentro de Out_Deflex (Etapa_1.py / static_deflection.py) se autodetectan también
+        deflex_h5 = os.path.join(tmp, "deflex_doe.h5")
+        deflex_yaml = os.path.join(tmp, "deflex_labels.yaml")
+        with h5py.File(deflex_h5, "w") as f:
+            grp = f.create_group("case_a")
+            sub = grp.create_group("Axial_disp")
+            sub.create_dataset("time", data=t)
+            sub.create_dataset("values", data=t)
+            out_grp = grp.create_group("Out_Deflex")
+            corrected = out_grp.create_group("Axial_disp_out_deflex")
+            corrected.create_dataset("time", data=t)
+            corrected.create_dataset("values", data=t - 0.5)  # ejemplo: deflexión restada
+        with open(deflex_yaml, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"source": "x", "cases": {"case_a": [[0.0, 10.0, "stable"]]}}, f)
+
+        ds_deflex = from_doe_h5(deflex_h5, deflex_yaml)  # channels=None -> autodetecta también Out_Deflex
+        assert {s.id for s in ds_deflex.signals} == {"case_a/Axial_disp", "case_a/Axial_disp_out_deflex"}
+        sig_corrected = next(s for s in ds_deflex.signals if s.id == "case_a/Axial_disp_out_deflex")
+        assert np.allclose(sig_corrected.y, t - 0.5)
 
         # 4c. t_start/t_end recorta la señal ANTES de todo lo demás (ej. entrada/salida de herramienta)
         crop_h5 = os.path.join(tmp, "crop_doe.h5")
