@@ -2506,21 +2506,33 @@ def _case_color_map(cases: List[str]):
 
 
 class ReferenceViewerApp:
-    """Visualizador de reference_dataset.py -- Fase 1 (tramos) y Fase 2A (combinado).
+    """Visualizador de reference_dataset.py -- Fase 1 (tramos) y Fase 2A (combinado),
+    y cualquier variante futura de reference_dataset.py que se agregue como un
+    h5_type mas (el dispatch por tipo abajo es el unico lugar a extender).
 
     Ventana separada de DoeSelectorUnifiedApp a propósito: el esquema de datos
     (label/case/tramo o label/canal) no tiene nada que ver con "casos DOE" y
     reusar el Treeview/topbar de esa clase confundiría más de lo que ayudaría.
     Mismo lanzador/auto-detección/FileDialog que el resto de la app.
+
+    `container`: frame donde se empaquetan los widgets -- por defecto `root`
+    (dueño de toda la ventana, comportamiento de siempre). Si se pasa un
+    frame distinto (una pestaña de Notebook, ver `_launch_app_for`), la
+    instancia vive ahí en vez de en la ventana completa, para poder alternar
+    entre varios reference_dataset.py (tramos, combinado, o lo que venga
+    después) sin reabrir el diálogo de archivo.
     """
 
-    def __init__(self, root: tk.Tk, h5_path: str, h5_type: str) -> None:
+    def __init__(self, root: tk.Tk, h5_path: str, h5_type: str, container: Optional[tk.Widget] = None) -> None:
         self.root = root
+        self.container = container if container is not None else root
         self.h5_path = h5_path
         self.h5_type = h5_type
-        self.root.title(f"{_TYPE_LABELS.get(h5_type, h5_type)}  —  {os.path.basename(h5_path)}")
-        self.root.minsize(1000, 600)
-        self.root.state("zoomed")
+
+        if container is None:
+            self.root.title(f"{_TYPE_LABELS.get(h5_type, h5_type)}  —  {os.path.basename(h5_path)}")
+            self.root.minsize(1000, 600)
+            self.root.state("zoomed")
 
         if h5_type == TYPE_REFERENCE_DATASET:
             self._build_tramos_ui()
@@ -2529,15 +2541,15 @@ class ReferenceViewerApp:
 
     # ── ABRIR ARCHIVO (comun a las dos vistas) ────────────────────────────────
     def _open_file(self) -> None:
-        path = filedialog.askopenfilename(
-            parent=self.root, title="Open DOE HDF5 file",
+        paths = filedialog.askopenfilenames(
+            parent=self.root, title="Open DOE HDF5 file(s) -- select several for a tab per file",
             filetypes=[("HDF5 files", "*.h5 *.hdf5"), ("All files", "*.*")],
             initialdir=os.path.dirname(self.h5_path),
         )
-        if not path:
+        if not paths:
             return
         try:
-            _launch_app_for(self.root, path)
+            _launch_app_for(self.root, paths)
         except Exception as exc:
             messagebox.showerror("Error loading", str(exc), parent=self.root)
 
@@ -2545,7 +2557,7 @@ class ReferenceViewerApp:
     def _build_tramos_ui(self) -> None:
         self._index = _index_reference_dataset(self.h5_path)
 
-        bar = ttk.Frame(self.root, padding=(4, 2))
+        bar = ttk.Frame(self.container, padding=(4, 2))
         bar.pack(side=tk.TOP, fill=tk.X)
         ttk.Button(bar, text="📂  Open another .h5", command=self._open_file).pack(side=tk.LEFT, padx=4)
         ttk.Label(
@@ -2581,7 +2593,7 @@ class ReferenceViewerApp:
             command=self._plot_selected_tramos,
         ).pack(side=tk.LEFT, padx=4)
 
-        body = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
+        body = ttk.Panedwindow(self.container, orient=tk.HORIZONTAL)
         body.pack(fill=tk.BOTH, expand=True)
         left = ttk.Frame(body)
         body.add(left, weight=1)
@@ -2590,18 +2602,19 @@ class ReferenceViewerApp:
         stats_frame = ttk.Frame(body)
         body.add(stats_frame, weight=1)
         # weight solo afecta el resize, no el ancho inicial, y el ancho de la ventana
-        # "zoomed" tarda un poco en asentarse -- reaplicar en cada resize de la ventana
-        # (no se dispara al arrastrar el sash a mano, solo al cambiar el tamaño de root).
+        # "zoomed" (o de la pestaña, si esta embebida en un Notebook) tarda un poco en
+        # asentarse -- reaplicar en cada resize del contenedor (no se dispara al
+        # arrastrar el sash a mano, solo al cambiar el tamaño real del contenedor).
         def _sync_left_pane_width(_event=None):
-            w = self.root.winfo_width()
+            w = self.container.winfo_width()
             if w > 100:
                 try:
                     body.sashpos(0, int(w * 0.32))
                     body.sashpos(1, int(w * 0.82))
                 except tk.TclError:
                     pass
-        self.root.bind("<Configure>", _sync_left_pane_width)
-        self.root.after(50, _sync_left_pane_width)
+        self.container.bind("<Configure>", _sync_left_pane_width)
+        self.container.after(50, _sync_left_pane_width)
 
         self._tree_cols = ("label", "case", "channel", "idx", "t0", "t1", "duration", "kappa")
         widths = (60, 90, 100, 40, 65, 65, 75, 60)
@@ -2748,7 +2761,7 @@ class ReferenceViewerApp:
         self._combined_data: Dict[str, Dict[str, Any]] = {}
         channels = sorted({ch for (_, ch) in self._combined_index})
 
-        bar = ttk.Frame(self.root, padding=(4, 2))
+        bar = ttk.Frame(self.container, padding=(4, 2))
         bar.pack(side=tk.TOP, fill=tk.X)
         ttk.Button(bar, text="📂  Open another .h5", command=self._open_file).pack(side=tk.LEFT, padx=4)
         ttk.Label(
@@ -2776,7 +2789,7 @@ class ReferenceViewerApp:
             command=self._replot_combinado,
         ).pack(side=tk.LEFT, padx=4)
 
-        body = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
+        body = ttk.Panedwindow(self.container, orient=tk.HORIZONTAL)
         body.pack(fill=tk.BOTH, expand=True)
         plot_frame = ttk.Frame(body)
         body.add(plot_frame, weight=3)
@@ -2884,18 +2897,60 @@ class ReferenceViewerApp:
             self._meta_text.insert(tk.END, "\n")
 
 
-def _launch_app_for(root: tk.Tk, h5_path: str) -> None:
-    """Destruye los widgets de `root` y construye la app apropiada para `h5_path`."""
-    h5_type = detect_h5_type(h5_path)
+def _launch_app_for(root: tk.Tk, h5_paths) -> None:
+    """Destruye los widgets de `root` y construye la app apropiada.
+
+    Con un solo archivo: comportamiento de siempre, una vista dueña de toda
+    la ventana. Con 2+: un Notebook con una pestaña por archivo, para poder
+    alternar entre variantes de reference_dataset.py (tramos, combinado, o
+    lo que se agregue después) sin reabrir el diálogo. Los formatos DOE
+    legacy no están pensados para embeberse en una pestaña -- si aparecen
+    mezclados con reference_dataset.py, esa pestaña muestra un aviso en vez
+    de la vista completa (abrilos solos si querés esa vista).
+    """
+    if isinstance(h5_paths, str):
+        h5_paths = [h5_paths]
+    h5_paths = list(h5_paths)
+
     for w in root.winfo_children():
         try:
             w.destroy()
         except Exception:
             pass
-    if h5_type in (TYPE_REFERENCE_DATASET, TYPE_REFERENCE_COMBINED):
-        ReferenceViewerApp(root, h5_path, h5_type)
-    else:
-        DoeSelectorUnifiedApp(root, h5_path)
+
+    if len(h5_paths) == 1:
+        h5_path = h5_paths[0]
+        h5_type = detect_h5_type(h5_path)
+        root.title(f"{_TYPE_LABELS.get(h5_type, h5_type)}  —  {os.path.basename(h5_path)}")
+        root.minsize(1000, 600)
+        root.state("zoomed")
+        if h5_type in (TYPE_REFERENCE_DATASET, TYPE_REFERENCE_COMBINED):
+            ReferenceViewerApp(root, h5_path, h5_type)
+        else:
+            DoeSelectorUnifiedApp(root, h5_path)
+        return
+
+    root.title(f"{len(h5_paths)} files")
+    root.minsize(1100, 650)
+    root.state("zoomed")
+    nb = ttk.Notebook(root)
+    nb.pack(fill=tk.BOTH, expand=True)
+    for path in h5_paths:
+        h5_type = detect_h5_type(path)
+        tab = ttk.Frame(nb)
+        nb.add(tab, text=os.path.basename(path))
+        if h5_type in (TYPE_REFERENCE_DATASET, TYPE_REFERENCE_COMBINED):
+            ReferenceViewerApp(root, path, h5_type, container=tab)
+        else:
+            ttk.Label(
+                tab, justify=tk.LEFT, padding=20, wraplength=520,
+                text=(
+                    f"'{os.path.basename(path)}' is a legacy DOE format "
+                    f"({_TYPE_LABELS.get(h5_type, h5_type)}) — it isn't built to be "
+                    "embedded in a tab. Open it by itself (single selection) to use "
+                    "its full view."
+                ),
+            ).pack()
 
 
 # ==============================================================================
@@ -2913,39 +2968,41 @@ Ejemplos:
   python doe_unified_selector.py --h5 DOE_xxx/doe_indicator_results.h5
   python doe_unified_selector.py --h5 DOE_xxx/doe_noise_indicator_results.h5
   python doe_unified_selector.py --h5 DOE_xxx/doe_model_snr_results.h5
+  python doe_unified_selector.py --h5 reference_dataset.h5 reference_combined.h5
 """,
     )
-    p.add_argument("--h5", default=None, metavar="PATH",
-                   help="Ruta al archivo .h5 a abrir (omitir → FileDialog)")
+    p.add_argument("--h5", default=None, metavar="PATH", nargs="+",
+                   help="Ruta(s) al/los archivo(s) .h5 a abrir (omitir → FileDialog). "
+                        "2+ rutas -> una pestaña por archivo.")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
-    h5_path = args.h5
-    if not h5_path:
+    h5_paths = args.h5
+    if not h5_paths:
         # Sin parent explicito: tkinter crea y maneja su propio root implicito,
         # mas confiable en Windows que un root manual withdraw()-eado.
-        h5_path = filedialog.askopenfilename(
-            title="Select a DOE HDF5 file",
+        h5_paths = filedialog.askopenfilenames(
+            title="Select one or more DOE HDF5 files",
             filetypes=[("HDF5 files", "*.h5 *.hdf5"), ("All files", "*.*")],
         )
-        if not h5_path:
+        if not h5_paths:
             print("[INFO] No se seleccionó ningún archivo. Saliendo.")
             return
 
-    if not os.path.isfile(h5_path):
-        print(f"[ERROR] Archivo no encontrado: {h5_path}")
+    missing = [p for p in h5_paths if not os.path.isfile(p)]
+    if missing:
+        print(f"[ERROR] Archivo(s) no encontrado(s): {missing}")
         return
 
-    print(f"[INFO] Cargando: {h5_path}")
-    h5_type = detect_h5_type(h5_path)
-    print(f"[INFO] Formato detectado: {_TYPE_LABELS.get(h5_type, h5_type)}")
+    for p in h5_paths:
+        print(f"[INFO] Cargando: {p} ({_TYPE_LABELS.get(detect_h5_type(p), '?')})")
 
     root = tk.Tk()
     root.update()  # pinta la ventana ya, antes de la carga pesada del .h5
-    _launch_app_for(root, h5_path)
+    _launch_app_for(root, h5_paths)
     root.mainloop()
 
 
