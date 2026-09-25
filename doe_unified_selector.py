@@ -2667,7 +2667,7 @@ class ReferenceViewerApp:
             arrow = (" ▼" if self._tree_sort_rev else " ▲") if c == self._tree_sort_col else ""
             self._tree.heading(c, text=hdr + arrow, command=lambda cc=c: self._sort_tree_by(cc))
 
-    _TRAMOS_DETAIL_LIMIT = 5  # por encima de esto, sin gaussiana/lineas mu+-sigma/stats detalladas en la leyenda
+    _TRAMOS_DETAIL_LIMIT = 3  # por encima de esto, sin lineas mu+-sigma/stats detalladas en la leyenda
 
     def _plot_selected_tramos(self) -> None:
         sel = self._tree.selection()
@@ -2735,8 +2735,12 @@ class ReferenceViewerApp:
         if not stats:
             self._tramos_stats_text.insert(tk.END, "(no segments selected)\n")
             return
-        for piece_label, mu, sigma in stats:
-            self._tramos_stats_text.insert(tk.END, f"{piece_label}\n  μ = {mu:.4g}\n  σ = {sigma:.4g}\n\n")
+        self._tramos_stats_text.insert(tk.END, "== Mean (μ) ==\n")
+        for piece_label, mu, _sigma in stats:
+            self._tramos_stats_text.insert(tk.END, f"{piece_label}\n  μ = {mu:.4g}\n\n")
+        self._tramos_stats_text.insert(tk.END, "== Std (σ) ==\n")
+        for piece_label, _mu, sigma in stats:
+            self._tramos_stats_text.insert(tk.END, f"{piece_label}\n  σ = {sigma:.4g}\n\n")
 
     # ══════════════════════════════ PESTAÑA "COMBINADO" ════════════════════════════
     def _build_combinado_ui(self) -> None:
